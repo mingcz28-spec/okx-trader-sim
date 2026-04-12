@@ -47,6 +47,23 @@ type BacktestResult = {
   maxDrawdown: number;
 };
 
+type BacktestCandle = {
+  ts: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+type BacktestTradePoint = {
+  entryTs: number;
+  entryPrice: number;
+  exitTs: number;
+  exitPrice: number;
+  ret: number;
+  reason: 'stop_loss' | 'trailing_exit';
+};
+
 type SimState = {
   apiConfig: {
     apiKey: string;
@@ -80,6 +97,16 @@ type SimState = {
     accountPositions?: unknown;
     ordersHistory?: unknown;
   };
+  backtest?: {
+    instId: string;
+    bar: string;
+    candles: number;
+    results?: BacktestResult[];
+    top?: BacktestResult[];
+    selected?: BacktestResult;
+    chartCandles?: BacktestCandle[];
+    tradePoints?: BacktestTradePoint[];
+  };
   positions: Position[];
 };
 
@@ -111,7 +138,13 @@ export default function HomePage() {
   const [syncMode, setSyncMode] = useState<'demo' | 'live'>('demo');
   const [testing, setTesting] = useState(false);
   const [backtesting, setBacktesting] = useState(false);
+  const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([]);
   const [backtestTop, setBacktestTop] = useState<BacktestResult[]>([]);
+  const [backtestCandles, setBacktestCandles] = useState(0);
+  const [selectedBacktestKey, setSelectedBacktestKey] = useState('');
+  const [backtestSort, setBacktestSort] = useState<'return' | 'drawdown' | 'winRate'>('return');
+  const [backtestChartCandles, setBacktestChartCandles] = useState<BacktestCandle[]>([]);
+  const [backtestTradePoints, setBacktestTradePoints] = useState<BacktestTradePoint[]>([]);
 
   async function refreshState() {
     const res = await fetch('/api/sim');
@@ -120,6 +153,12 @@ export default function HomePage() {
     setApiForm(data.apiConfig);
     setRiskForm(data.riskConfig);
     setStrategyForm(data.strategyConfig ?? emptyState.strategyConfig!);
+    setBacktestResults(data.backtest?.results ?? []);
+    setBacktestTop(data.backtest?.top ?? []);
+    setBacktestCandles(data.backtest?.candles ?? 0);
+    setBacktestChartCandles(data.backtest?.chartCandles ?? []);
+    setBacktestTradePoints(data.backtest?.tradePoints ?? []);
+    setSelectedBacktestKey(data.backtest?.selected ? `${data.backtest.selected.stopLossPct}-${data.backtest.selected.trailingDrawdownPct}` : '');
     setLoading(false);
   }
 
@@ -202,11 +241,49 @@ export default function HomePage() {
         setError(data.message || '回测失败');
         return;
       }
-      setBacktestTop(data.top || []);
+      const top = data.top || [];
+      setBacktestResults(data.results || []);
+      setBacktestTop(top);
+      setBacktestCandles(Number(data.candles || 0));
+      setSelectedBacktestKey(top[0] ? `${top[0].stopLossPct}-${top[0].trailingDrawdownPct}` : '');
       setMessage(`RAVE-USDT-SWAP 回测完成，样本 ${data.candles} 根 1H K 线。`);
+      if (top[0]) {
+        await loadBacktestDetail(top[0].stopLossPct, top[0].trailingDrawdownPct);
+      }
     } finally {
       setBacktesting(false);
     }
+  }
+
+  async function loadBacktestDetail(stopLossPct: number, trailingDrawdownPct: number) {
+    const res = await fetch('/api/backtest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'detail',
+        instId: 'RAVE-USDT-SWAP',
+        stopLossPct,
+        trailingDrawdownPct,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      setError(data.message || '加载回测图失败');
+      return;
+    }
+    setBacktestChartCandles(data.candles || []);
+    setBacktestTradePoints(data.tradePoints || []);
+  }
+
+  function applyBacktestParams(result: BacktestResult) {
+    setStrategyForm((prev) => ({
+      ...prev,
+      stopLossPct: result.stopLossPct,
+      trailingDrawdownPct: result.trailingDrawdownPct,
+    }));
+    setSelectedBacktestKey(`${result.stopLossPct}-${result.trailingDrawdownPct}`);
+    setMessage(`已将回测参数带入策略表单: 止损 ${result.stopLossPct}% , 回撤卖出 ${result.trailingDrawdownPct}%。`);
+    loadBacktestDetail(result.stopLossPct, result.trailingDrawdownPct);
   }
 
   async function saveStrategyConfig() {
@@ -252,6 +329,45 @@ export default function HomePage() {
   const rawBalance = JSON.stringify(state.raw?.accountBalance ?? {}, null, 2);
   const rawPositions = JSON.stringify(state.raw?.accountPositions ?? {}, null, 2);
   const rawOrders = JSON.stringify(state.raw?.ordersHistory ?? {}, null, 2);
+  const sortedBacktestResults = [...(backtestResults.length ? backtestResults : backtestTop)].sort((a, b) => {
+    if (backtestSort === 'drawdown') {
+      return b.maxDrawdown - a.maxDrawdown || b.totalReturn - a.totalReturn;
+    }
+    if (backtestSort === 'winRate') {
+      return b.winRate - a.winRate || b.totalReturn - a.totalReturn;
+    }
+    return b.totalReturn - a.totalReturn || b.winRate - a.winRate;
+  });
+  const bestBacktest = sortedBacktestResults[0];
+  const selectedBacktest = sortedBacktestResults.find((r) => `${r.stopLossPct}-${r.trailingDrawdownPct}` === selectedBacktestKey);
+  const chartCandles = backtestChartCandles.slice(-120);
+  const chartWidth = 1100;
+  const chartHeight = 360;
+  const chartPad = 28;
+  const minPrice = chartCandles.length ? Math.min(...chartCandles.map((c) => c.low)) : 0;
+  const maxPrice = chartCandles.length ? Math.max(...chartCandles.map((c) => c.high)) : 1;
+  const priceRange = Math.max(maxPrice - minPrice, 1);
+  const candleGap = chartCandles.length ? (chartWidth - chartPad * 2) / chartCandles.length : 1;
+  const candleBodyWidth = Math.max(2, candleGap * 0.58);
+  const yOf = (price: number) => chartHeight - chartPad - ((price - minPrice) / priceRange) * (chartHeight - chartPad * 2);
+  const xOf = (index: number) => chartPad + index * candleGap + candleGap / 2;
+  const chartTrades = backtestTradePoints.filter((t) => chartCandles.some((c) => c.ts === t.entryTs) || chartCandles.some((c) => c.ts === t.exitTs));
+  const equitySeries = backtestTradePoints.reduce<Array<{ idx: number; equity: number }>>((acc, trade, index) => {
+    const prev = acc.length ? acc[acc.length - 1].equity : 1;
+    acc.push({ idx: index, equity: prev * (1 + trade.ret) });
+    return acc;
+  }, []);
+  const equityWidth = 1100;
+  const equityHeight = 220;
+  const equityPad = 24;
+  const minEquity = equitySeries.length ? Math.min(1, ...equitySeries.map((p) => p.equity)) : 0;
+  const maxEquity = equitySeries.length ? Math.max(1, ...equitySeries.map((p) => p.equity)) : 1;
+  const equityRange = Math.max(maxEquity - minEquity, 0.0001);
+  const equityPath = equitySeries.map((p, i) => {
+    const x = equityPad + (i / Math.max(equitySeries.length - 1, 1)) * (equityWidth - equityPad * 2);
+    const y = equityHeight - equityPad - ((p.equity - minEquity) / equityRange) * (equityHeight - equityPad * 2);
+    return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+  }).join(' ');
 
   return (
     <main>
@@ -344,7 +460,35 @@ export default function HomePage() {
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>RAVE 策略回测结果</h2>
-        <table className="table">
+        <div className="small">样本: {backtestCandles || 0} 根 1H K 线。只用于测试，不代表实盘表现。</div>
+        <div className="row" style={{ marginTop: 12, alignItems: 'end' }}>
+          <div>
+            <label>排序方式</label>
+            <select value={backtestSort} onChange={(e) => setBacktestSort(e.target.value as 'return' | 'drawdown' | 'winRate')}>
+              <option value="return">收益优先</option>
+              <option value="drawdown">回撤优先</option>
+              <option value="winRate">胜率优先</option>
+            </select>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 16, alignItems: 'stretch' }}>
+          <div style={{ flex: 1 }}>
+            <div className="small">当前最优候选</div>
+            <div className="kpi">{bestBacktest ? `${bestBacktest.stopLossPct}% / ${bestBacktest.trailingDrawdownPct}%` : '-'}</div>
+            <div className="small">总收益 {bestBacktest ? `${formatNumber(bestBacktest.totalReturn * 100, 2)}%` : '-'}</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="small">当前选中参数</div>
+            <div className="kpi">{selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</div>
+            <div className="small">最大回撤 {selectedBacktest ? `${formatNumber(selectedBacktest.maxDrawdown * 100, 2)}%` : '-'}</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="small">当前策略表单</div>
+            <div className="kpi">{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</div>
+            <div className="small">可直接保存为默认参数</div>
+          </div>
+        </div>
+        <table className="table" style={{ marginTop: 16 }}>
           <thead>
             <tr>
               <th>止损 %</th>
@@ -353,20 +497,133 @@ export default function HomePage() {
               <th>胜率</th>
               <th>总收益</th>
               <th>最大回撤</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            {backtestTop.length ? backtestTop.map((r) => (
-              <tr key={`${r.stopLossPct}-${r.trailingDrawdownPct}`}>
-                <td>{r.stopLossPct}</td>
-                <td>{r.trailingDrawdownPct}</td>
-                <td>{r.trades}</td>
-                <td>{formatNumber(r.winRate * 100, 2)}%</td>
-                <td>{formatNumber(r.totalReturn * 100, 2)}%</td>
-                <td>{formatNumber(r.maxDrawdown * 100, 2)}%</td>
+            {sortedBacktestResults.length ? sortedBacktestResults.map((r) => {
+              const key = `${r.stopLossPct}-${r.trailingDrawdownPct}`;
+              const isSelected = key === selectedBacktestKey;
+              return (
+                <tr key={key} style={isSelected ? { background: 'rgba(96, 165, 250, 0.12)' } : undefined}>
+                  <td>{r.stopLossPct}</td>
+                  <td>{r.trailingDrawdownPct}</td>
+                  <td>{r.trades}</td>
+                  <td>{formatNumber(r.winRate * 100, 2)}%</td>
+                  <td>{formatNumber(r.totalReturn * 100, 2)}%</td>
+                  <td>{formatNumber(r.maxDrawdown * 100, 2)}%</td>
+                  <td><button className="secondary" onClick={() => applyBacktestParams(r)}>{isSelected ? '已选中' : '应用到策略'}</button></td>
+                </tr>
+              );
+            }) : (
+              <tr><td colSpan={7} className="small">还没有回测结果，点“回测 RAVE 策略”即可。</td></tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>回测 K 线与买卖点</h2>
+        <div className="small">显示最近 120 根 1H K 线。绿色三角是买点，红色三角是卖点。</div>
+        {chartCandles.length ? (
+          <div className="chartWrap" style={{ marginTop: 16 }}>
+            <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="backtestChart" role="img" aria-label="Backtest candle chart">
+              <line x1={chartPad} y1={chartPad} x2={chartPad} y2={chartHeight - chartPad} stroke="rgba(159,176,208,0.35)" />
+              <line x1={chartPad} y1={chartHeight - chartPad} x2={chartWidth - chartPad} y2={chartHeight - chartPad} stroke="rgba(159,176,208,0.35)" />
+              {chartCandles.map((c, index) => {
+                const x = xOf(index);
+                const openY = yOf(c.open);
+                const closeY = yOf(c.close);
+                const highY = yOf(c.high);
+                const lowY = yOf(c.low);
+                const up = c.close >= c.open;
+                const bodyTop = Math.min(openY, closeY);
+                const bodyHeight = Math.max(Math.abs(closeY - openY), 1.5);
+                return (
+                  <g key={c.ts}>
+                    <line x1={x} y1={highY} x2={x} y2={lowY} stroke={up ? '#35d07f' : '#ff6b81'} strokeWidth="1.2" />
+                    <rect x={x - candleBodyWidth / 2} y={bodyTop} width={candleBodyWidth} height={bodyHeight} fill={up ? '#35d07f' : '#ff6b81'} opacity="0.92" />
+                  </g>
+                );
+              })}
+              {chartTrades.map((t, idx) => {
+                const entryIndex = chartCandles.findIndex((c) => c.ts === t.entryTs);
+                const exitIndex = chartCandles.findIndex((c) => c.ts === t.exitTs);
+                const ex = entryIndex >= 0 ? xOf(entryIndex) : null;
+                const ey = yOf(t.entryPrice);
+                const xx = exitIndex >= 0 ? xOf(exitIndex) : null;
+                const xy = yOf(t.exitPrice);
+                const entryTitle = `买入\n时间: ${new Date(t.entryTs).toLocaleString('zh-CN', { hour12: false })}\n价格: ${formatNumber(t.entryPrice, 8)}`;
+                const exitTitle = `卖出\n时间: ${new Date(t.exitTs).toLocaleString('zh-CN', { hour12: false })}\n价格: ${formatNumber(t.exitPrice, 8)}\n收益: ${formatNumber(t.ret * 100, 2)}%\n原因: ${t.reason === 'stop_loss' ? '止损卖出' : '回撤卖出'}`;
+                return (
+                  <g key={`${t.entryTs}-${t.exitTs}-${idx}`}>
+                    {ex != null ? (
+                      <polygon points={`${ex},${ey - 10} ${ex - 7},${ey + 4} ${ex + 7},${ey + 4}`} fill="#60a5fa">
+                        <title>{entryTitle}</title>
+                      </polygon>
+                    ) : null}
+                    {xx != null ? (
+                      <polygon points={`${xx},${xy + 10} ${xx - 7},${xy - 4} ${xx + 7},${xy - 4}`} fill={t.reason === 'stop_loss' ? '#ff6b81' : '#f5b942'}>
+                        <title>{exitTitle}</title>
+                      </polygon>
+                    ) : null}
+                    {ex != null && xx != null ? <line x1={ex} y1={ey} x2={xx} y2={xy} stroke="rgba(96,165,250,0.28)" strokeDasharray="4 4" /> : null}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        ) : (
+          <div className="small" style={{ marginTop: 12 }}>先运行回测，或从结果表里选择一组参数。</div>
+        )}
+        <div className="row" style={{ marginTop: 16 }}>
+          <div className="small">买点数: {chartTrades.length}</div>
+          <div className="small">卖点数: {chartTrades.length}</div>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>回测资金曲线</h2>
+        <div className="small">从 1.0 初始资金开始，按每笔交易收益连续复利，方便看策略过程是否平滑。</div>
+        {equitySeries.length ? (
+          <div className="chartWrap" style={{ marginTop: 16 }}>
+            <svg viewBox={`0 0 ${equityWidth} ${equityHeight}`} className="backtestChart" role="img" aria-label="Backtest equity curve">
+              <line x1={equityPad} y1={equityPad} x2={equityPad} y2={equityHeight - equityPad} stroke="rgba(159,176,208,0.35)" />
+              <line x1={equityPad} y1={equityHeight - equityPad} x2={equityWidth - equityPad} y2={equityHeight - equityPad} stroke="rgba(159,176,208,0.35)" />
+              <path d={equityPath} fill="none" stroke="#60a5fa" strokeWidth="2.5" />
+            </svg>
+          </div>
+        ) : (
+          <div className="small" style={{ marginTop: 12 }}>暂无资金曲线，请先运行回测。</div>
+        )}
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>回测交易过程明细</h2>
+        <div className="small">逐笔检查买点、卖点、收益和卖出原因，更容易判断这套规则是否合理。</div>
+        <table className="table" style={{ marginTop: 16 }}>
+          <thead>
+            <tr>
+              <th>买入时间</th>
+              <th>买入价</th>
+              <th>卖出时间</th>
+              <th>卖出价</th>
+              <th>收益率</th>
+              <th>卖出原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            {backtestTradePoints.length ? backtestTradePoints.slice(-40).reverse().map((t, idx) => (
+              <tr key={`${t.entryTs}-${t.exitTs}-${idx}`}>
+                <td>{new Date(t.entryTs).toLocaleString('zh-CN', { hour12: false })}</td>
+                <td>{formatNumber(t.entryPrice, 8)}</td>
+                <td>{new Date(t.exitTs).toLocaleString('zh-CN', { hour12: false })}</td>
+                <td>{formatNumber(t.exitPrice, 8)}</td>
+                <td className={t.ret >= 0 ? 'good' : 'bad'}>{formatNumber(t.ret * 100, 2)}%</td>
+                <td>{t.reason === 'stop_loss' ? '止损卖出' : '回撤卖出'}</td>
               </tr>
             )) : (
-              <tr><td colSpan={6} className="small">还没有回测结果，点“回测 RAVE 策略”即可。</td></tr>
+              <tr><td colSpan={6} className="small">暂无交易过程，请先运行回测。</td></tr>
             )}
           </tbody>
         </table>

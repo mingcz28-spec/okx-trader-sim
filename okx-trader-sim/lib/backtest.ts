@@ -1,5 +1,22 @@
 const BASE = 'https://www.okx.com';
 
+export type CandlePoint = {
+  ts: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+export type BacktestTradePoint = {
+  entryTs: number;
+  entryPrice: number;
+  exitTs: number;
+  exitPrice: number;
+  ret: number;
+  reason: 'stop_loss' | 'trailing_exit';
+};
+
 export type BacktestResult = {
   stopLossPct: number;
   trailingDrawdownPct: number;
@@ -7,6 +24,11 @@ export type BacktestResult = {
   winRate: number;
   totalReturn: number;
   maxDrawdown: number;
+};
+
+export type BacktestDetail = BacktestResult & {
+  candles: CandlePoint[];
+  tradePoints: BacktestTradePoint[];
 };
 
 async function fetchCandles(instId: string, bar: string, limit: number, after?: string) {
@@ -36,15 +58,17 @@ async function loadSeries(instId: string, bar = '1H', limit = 100, pages = 10) {
     .sort((a, b) => a.ts - b.ts);
 }
 
-function runStrategy(candles: Array<{ ts: number; open: number; high: number; low: number; close: number }>, stopLossPct: number, trailingDrawdownPct: number): BacktestResult {
-  const trades: Array<{ ret: number }> = [];
+function runStrategy(candles: CandlePoint[], stopLossPct: number, trailingDrawdownPct: number): BacktestDetail {
+  const trades: BacktestTradePoint[] = [];
   let inPosition = false;
   let entry = 0;
+  let entryTs = 0;
   let peak = 0;
 
   for (const c of candles) {
     if (!inPosition) {
       entry = c.close;
+      entryTs = c.ts;
       peak = c.close;
       inPosition = true;
       continue;
@@ -55,13 +79,27 @@ function runStrategy(candles: Array<{ ts: number; open: number; high: number; lo
     const trailingPrice = peak * (1 - trailingDrawdownPct / 100);
 
     let exitPrice: number | null = null;
-    if (c.low <= stopPrice) exitPrice = stopPrice;
-    else if (c.low <= trailingPrice) exitPrice = trailingPrice;
+    let reason: 'stop_loss' | 'trailing_exit' | null = null;
+    if (c.low <= stopPrice) {
+      exitPrice = stopPrice;
+      reason = 'stop_loss';
+    } else if (c.low <= trailingPrice) {
+      exitPrice = trailingPrice;
+      reason = 'trailing_exit';
+    }
 
-    if (exitPrice != null) {
-      trades.push({ ret: (exitPrice - entry) / entry });
+    if (exitPrice != null && reason) {
+      trades.push({
+        entryTs,
+        entryPrice: entry,
+        exitTs: c.ts,
+        exitPrice,
+        ret: (exitPrice - entry) / entry,
+        reason,
+      });
       inPosition = false;
       entry = 0;
+      entryTs = 0;
       peak = 0;
     }
   }
@@ -83,6 +121,8 @@ function runStrategy(candles: Array<{ ts: number; open: number; high: number; lo
     winRate: trades.length ? wins / trades.length : 0,
     totalReturn,
     maxDrawdown: maxDd,
+    candles,
+    tradePoints: trades,
   };
 }
 
@@ -96,4 +136,23 @@ export async function backtestGrid(instId = 'RAVE-USDT-SWAP') {
   }
   results.sort((a, b) => b.totalReturn - a.totalReturn || b.winRate - a.winRate);
   return { instId, bar: '1H', candles: candles.length, top: results.slice(0, 12), results };
+}
+
+export async function backtestDetail(instId = 'RAVE-USDT-SWAP', stopLossPct = 1, trailingDrawdownPct = 2) {
+  const candles = await loadSeries(instId);
+  const detail = runStrategy(candles, stopLossPct, trailingDrawdownPct);
+  return {
+    instId,
+    bar: '1H',
+    candles: detail.candles,
+    tradePoints: detail.tradePoints,
+    summary: {
+      stopLossPct: detail.stopLossPct,
+      trailingDrawdownPct: detail.trailingDrawdownPct,
+      trades: detail.trades,
+      winRate: detail.winRate,
+      totalReturn: detail.totalReturn,
+      maxDrawdown: detail.maxDrawdown,
+    },
+  };
 }

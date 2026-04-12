@@ -97,3 +97,17 @@ button.secondary {
   text-align: left;
   font-size: 14px;
 }
+.chartWrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #0b1524;
+  padding: 10px;
+}
+.backtestChart {
+  width: 100%;
+  min-width: 980px;
+  height: auto;
+  display: block;
+}

@@ -61,6 +61,51 @@ export type StrategyConfig = {
   lastSignal?: 'buy' | 'sell' | 'hold';
 };
 
+export type BacktestSummary = {
+  instId: string;
+  bar: string;
+  candles: number;
+  results?: Array<{
+    stopLossPct: number;
+    trailingDrawdownPct: number;
+    trades: number;
+    winRate: number;
+    totalReturn: number;
+    maxDrawdown: number;
+  }>;
+  top?: Array<{
+    stopLossPct: number;
+    trailingDrawdownPct: number;
+    trades: number;
+    winRate: number;
+    totalReturn: number;
+    maxDrawdown: number;
+  }>;
+  selected?: {
+    stopLossPct: number;
+    trailingDrawdownPct: number;
+    trades: number;
+    winRate: number;
+    totalReturn: number;
+    maxDrawdown: number;
+  };
+  chartCandles?: Array<{
+    ts: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+  }>;
+  tradePoints?: Array<{
+    entryTs: number;
+    entryPrice: number;
+    exitTs: number;
+    exitPrice: number;
+    ret: number;
+    reason: 'stop_loss' | 'trailing_exit';
+  }>;
+};
+
 export type SimState = {
   apiConfig: ApiConfig;
   riskConfig: RiskConfig;
@@ -74,6 +119,7 @@ export type SimState = {
   balanceDetails?: BalanceDetail[];
   orderHistory?: OrderHistoryItem[];
   raw?: OkxRawPayloads;
+  backtest?: BacktestSummary;
   positions: Position[];
 };
 
@@ -101,6 +147,15 @@ function createInitialState(): SimState {
     ],
     orderHistory: [],
     raw: {},
+    backtest: {
+      instId: 'RAVE-USDT-SWAP',
+      bar: '1H',
+      candles: 0,
+      results: [],
+      top: [],
+      tradePoints: [],
+      chartCandles: [],
+    },
     positions: [
       {
         id: 'p1',
@@ -206,5 +261,11 @@ export function closeAllPositions() {
   state.positions = [];
   state.availableMargin = state.equity * 0.9;
   state.strategyStatus = 'paused';
+  return state;
+}
+
+export function updateBacktest(backtest: BacktestSummary) {
+  const state = getSimState();
+  state.backtest = backtest;
   return state;
 }
