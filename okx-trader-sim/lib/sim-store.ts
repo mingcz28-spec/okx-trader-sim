@@ -45,18 +45,35 @@ export type OrderHistoryItem = {
   createdAt: string;
 };
 
+export type OkxRawPayloads = {
+  accountBalance?: unknown;
+  accountPositions?: unknown;
+  ordersHistory?: unknown;
+};
+
+export type StrategyConfig = {
+  enabled: boolean;
+  entrySide: 'buy';
+  stopLossPct: number;
+  trailingDrawdownPct: number;
+  highestPriceSinceEntry?: number;
+  entryPrice?: number;
+  lastSignal?: 'buy' | 'sell' | 'hold';
+};
+
 export type SimState = {
   apiConfig: ApiConfig;
   riskConfig: RiskConfig;
+  strategyConfig?: StrategyConfig;
   equity: number;
   availableMargin: number;
   dailyPnl: number;
   drawdownPct: number;
   strategyStatus: 'idle' | 'running' | 'paused';
   currencyMode?: 'USD' | 'CAD';
-  fxRateUSDCAD?: number;
   balanceDetails?: BalanceDetail[];
   orderHistory?: OrderHistoryItem[];
+  raw?: OkxRawPayloads;
   positions: Position[];
 };
 
@@ -66,17 +83,24 @@ function createInitialState(): SimState {
   return {
     apiConfig: { apiKey: '', secretKey: '', passphrase: '' },
     riskConfig: { maxPositionPct: 5, maxDailyLossPct: 3, maxConsecutiveLosses: 3 },
+    strategyConfig: {
+      enabled: false,
+      entrySide: 'buy',
+      stopLossPct: 1,
+      trailingDrawdownPct: 2,
+      lastSignal: 'hold',
+    },
     equity: 10000,
     availableMargin: 8420,
     dailyPnl: 132.4,
     drawdownPct: -1.8,
     strategyStatus: 'idle',
     currencyMode: 'USD',
-    fxRateUSDCAD: 1.37,
     balanceDetails: [
       { ccy: 'USDT', equity: 10000, cashBalance: 10000, availableBalance: 8420 },
     ],
     orderHistory: [],
+    raw: {},
     positions: [
       {
         id: 'p1',
@@ -128,6 +152,12 @@ export function updateApiConfig(apiConfig: ApiConfig) {
 export function updateRiskConfig(riskConfig: RiskConfig) {
   const state = getSimState();
   state.riskConfig = riskConfig;
+  return state;
+}
+
+export function updateStrategyConfig(strategyConfig: StrategyConfig) {
+  const state = getSimState();
+  state.strategyConfig = strategyConfig;
   return state;
 }
 

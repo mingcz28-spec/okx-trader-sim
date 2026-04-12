@@ -3,14 +3,6 @@ import { getSimState, type BalanceDetail, type OrderHistoryItem, type Position, 
 
 const OKX_BASE_URL = 'https://www.okx.com';
 
-type OkxTickerResponse = {
-  code: string;
-  msg: string;
-  data?: Array<{
-    instId?: string;
-    last?: string;
-  }>;
-};
 
 type OkxBalanceResponse = {
   code: string;
@@ -123,10 +115,9 @@ export async function testOkxConnection(mode: 'demo' | 'live' = 'demo') {
 
 export async function syncOkxLiveState(mode: 'demo' | 'live' = 'demo'): Promise<SimState> {
   const state = getSimState();
-  const [balanceRes, positionsRes, tickerRes, ordersRes] = await Promise.all([
+  const [balanceRes, positionsRes, ordersRes] = await Promise.all([
     okxGet<OkxBalanceResponse>('/api/v5/account/balance', mode),
     okxGet<OkxPositionsResponse>('/api/v5/account/positions', mode),
-    okxGet<OkxTickerResponse>('/api/v5/market/ticker?instId=USDT-CAD', mode).catch(() => ({ code: '1', msg: 'ticker unavailable', data: [] })),
     okxGet<OkxOrdersHistoryResponse>('/api/v5/trade/orders-history-archive?instType=SWAP&limit=10', mode).catch(() => ({ code: '1', msg: 'orders unavailable', data: [] })),
   ]);
 
@@ -139,10 +130,8 @@ export async function syncOkxLiveState(mode: 'demo' | 'live' = 'demo'): Promise<
 
   const balance = balanceRes.data?.[0];
   const usdtDetail = balance?.details?.find((item) => item.ccy === 'USDT') ?? balance?.details?.[0];
-  const fxRateUSDCAD = parseNumber(tickerRes.data?.[0]?.last, 1.37);
 
-  state.fxRateUSDCAD = fxRateUSDCAD;
-  state.currencyMode = mode === 'live' ? 'CAD' : 'USD';
+  state.currencyMode = 'USD';
   state.equity = parseNumber(balance?.totalEq, state.equity);
   state.availableMargin = parseNumber(usdtDetail?.availBal ?? usdtDetail?.cashBal ?? usdtDetail?.eq, state.availableMargin);
 
@@ -188,6 +177,11 @@ export async function syncOkxLiveState(mode: 'demo' | 'live' = 'demo'): Promise<
     createdAt: item.cTime ? new Date(Number(item.cTime)).toISOString() : new Date().toISOString(),
   }));
   state.orderHistory = orderHistory;
+  state.raw = {
+    accountBalance: balanceRes,
+    accountPositions: positionsRes,
+    ordersHistory: ordersRes,
+  };
 
   return state;
 }

@@ -1,0 +1,295 @@
+{
+  "instId": "RAVE-USDT-SWAP",
+  "bar": "1H",
+  "candles": 1000,
+  "results": [
+    {
+      "stopLossPct": 2,
+      "trailingDrawdownPct": 1,
+      "trades": 480,
+      "winRate": 0.41875,
+      "totalReturn": 1.0063262651540876,
+      "maxDrawdown": -0.3670989046821129
+    },
+    {
+      "stopLossPct": 2,
+      "trailingDrawdownPct": 4,
+      "trades": 179,
+      "winRate": 0.3128491620111732,
+      "totalReturn": 0.3256124283204216,
+      "maxDrawdown": -0.5348651933502142
+    },
+    {
+      "stopLossPct": 0.5,
+      "trailingDrawdownPct": 1,
+      "trades": 489,
+      "winRate": 0.24335378323108384,
+      "totalReturn": 0.18094363642086098,
+      "maxDrawdown": -0.345859963524789
+    },
+    {
+      "stopLossPct": 1.5,
+      "trailingDrawdownPct": 1,
+      "trades": 480,
+      "winRate": 0.38125,
+      "totalReturn": 0.0729836012849081,
+      "maxDrawdown": -0.5371987941342078
+    },
+    {
+      "stopLossPct": 1.2,
+      "trailingDrawdownPct": 4,
+      "trades": 230,
+      "winRate": 0.2,
+      "totalReturn": 0.05503197798071158,
+      "maxDrawdown": -0.5164015633594699
+    },
+    {
+      "stopLossPct": 1.5,
+      "trailingDrawdownPct": 4,
+      "trades": 213,
+      "winRate": 0.2300469483568075,
+      "totalReturn": 0.028482948191791646,
+      "maxDrawdown": -0.6067595083307473
+    },
+    {
+      "stopLossPct": 0.8,
+      "trailingDrawdownPct": 4,
+      "trades": 276,
+      "winRate": 0.15579710144927536,
+      "totalReturn": -0.15545603784058215,
+      "maxDrawdown": -0.4364957783357202
+    },
+    {
+      "stopLossPct": 0.5,
+      "trailingDrawdownPct": 1.5,
+      "trades": 457,
+      "winRate": 0.19912472647702406,
+      "totalReturn": -0.16999064048069656,
+      "maxDrawdown": -0.5249781004410317
+    },
+    {
+      "stopLossPct": 0.8,
+      "trailingDrawdownPct": 1,
+      "trades": 482,
+      "winRate": 0.2966804979253112,
+      "totalReturn": -0.19303901498588683,
+      "maxDrawdown": -0.5536345826397775
+    },
+    {
+      "stopLossPct": 1,
+      "trailingDrawdownPct": 1,
+      "trades": 480,
+      "winRate": 0.3375,
+      "totalReturn": -0.230862538393789,
+      "maxDrawdown": -0.5536432723547247
+    },
+    {
+      "stopLossPct": 1.2,
+      "trailingDrawdownPct": 1,
+      "trades": 480,
+      "winRate": 0.3541666666666667,
+      "totalReturn": -0.23696652707580423,
+      "maxDrawdown": -0.5693844102125207
+    },
+    {
+      "stopLossPct": 2,
+      "trailingDrawdownPct": 3,
+      "trades": 235,
+      "winRate": 0.3021276595744681,
+      "totalReturn": -0.25684495768690596,
+      "maxDrawdown": -0.7634963932198564
+    },
+    {
+      "stopLossPct": 1.5,
+      "trailingDrawdownPct": 3,
+      "trades": 265,
+      "winRate": 0.26037735849056604,
+      "totalReturn": -0.26637633736161814,
+      "maxDrawdown": -0.7396539116371252
+    },
+    {
+      "stopLossPct": 1.2,
+      "trailingDrawdownPct": 3,
+      "trades": 281,
+      "winRate": 0.22419928825622776,
+      "totalReturn": -0.272151657416387,
+      "maxDrawdown": -0.6888610742976007
+    },
+    {
+      "stopLossPct": 1,
+      "trailingDrawdownPct": 4,
+      "trades": 251,
+      "winRate": 0.17131474103585656,
+      "totalReturn": -0.2981665859095326,
+      "maxDrawdown": -0.4862878196224871
+    },
+    {
+      "stopLossPct": 0.5,
+      "trailingDrawdownPct": 4,
+      "trades": 317,
+      "winRate": 0.08832807570977919,
+      "totalReturn": -0.3093167071095083,
+      "maxDrawdown": -0.38060550738107346
+    },
+    {
+      "stopLossPct": 1.5,
+      "trailingDrawdownPct": 2.5,
+      "trades": 305,
+      "winRate": 0.2721311475409836,
+      "totalReturn": -0.43929001226264375,
+      "maxDrawdown": -0.8112457077049839
+    },
+    {
+      "stopLossPct": 0.8,
+      "trailingDrawdownPct": 3,
+      "trades": 327,
+      "winRate": 0.17737003058103976,
+      "totalReturn": -0.44649733610147235,
+      "maxDrawdown": -0.6269358916529735
+    },
+    {
+      "stopLossPct": 2,
+      "trailingDrawdownPct": 1.5,
+      "trades": 418,
+      "winRate": 0.3277511961722488,
+      "totalReturn": -0.4910258735797661,
+      "maxDrawdown": -0.8017260706508352
+    },
+    {
+      "stopLossPct": 2,
+      "trailingDrawdownPct": 2,
+      "trades": 344,
+      "winRate": 0.313953488372093,
+      "totalReturn": -0.49423847924124187,
+      "maxDrawdown": -0.8643210730786735
+    },
+    {
+      "stopLossPct": 2,
+      "trailingDrawdownPct": 2.5,
+      "trades": 289,
+      "winRate": 0.314878892733564,
+      "totalReturn": -0.49476102752101514,
+      "maxDrawdown": -0.8515874102547549
+    },
+    {
+      "stopLossPct": 1.5,
+      "trailingDrawdownPct": 2,
+      "trades": 358,
+      "winRate": 0.2877094972067039,
+      "totalReturn": -0.5021696555148731,
+      "maxDrawdown": -0.8421802378374945
+    },
+    {
+      "stopLossPct": 0.8,
+      "trailingDrawdownPct": 1.5,
+      "trades": 442,
+      "winRate": 0.23755656108597284,
+      "totalReturn": -0.5024994304454369,
+      "maxDrawdown": -0.715169209032513
+    },
+    {
+      "stopLossPct": 1.2,
+      "trailingDrawdownPct": 2.5,
+      "trades": 329,
+      "winRate": 0.24316109422492402,
+      "totalReturn": -0.5146388654153635,
+      "maxDrawdown": -0.8025406819521231
+    },
+    {
+      "stopLossPct": 1,
+      "trailingDrawdownPct": 1.5,
+      "trades": 429,
+      "winRate": 0.25874125874125875,
+      "totalReturn": -0.5333948609186641,
+      "maxDrawdown": -0.7562742910684301
+    },
+    {
+      "stopLossPct": 1,
+      "trailingDrawdownPct": 3,
+      "trades": 301,
+      "winRate": 0.19601328903654486,
+      "totalReturn": -0.5427321352863856,
+      "maxDrawdown": -0.6758497404029697
+    },
+    {
+      "stopLossPct": 0.5,
+      "trailingDrawdownPct": 3,
+      "trades": 366,
+      "winRate": 0.10655737704918032,
+      "totalReturn": -0.5593446958755324,
+      "maxDrawdown": -0.6129327845308943
+    },
+    {
+      "stopLossPct": 1.5,
+      "trailingDrawdownPct": 1.5,
+      "trades": 418,
+      "winRate": 0.3038277511961722,
+      "totalReturn": -0.6064844987543483,
+      "maxDrawdown": -0.8133222497917882
+    },
+    {
+      "stopLossPct": 1.2,
+      "trailingDrawdownPct": 1.5,
+      "trades": 421,
+      "winRate": 0.28741092636579574,
+      "totalReturn": -0.6153746244484803,
+      "maxDrawdown": -0.7628991827110014
+    },
+    {
+      "stopLossPct": 1,
+      "trailingDrawdownPct": 2.5,
+      "trades": 350,
+      "winRate": 0.2,
+      "totalReturn": -0.627937552576842,
+      "maxDrawdown": -0.796107052755076
+    },
+    {
+      "stopLossPct": 0.5,
+      "trailingDrawdownPct": 2.5,
+      "trades": 401,
+      "winRate": 0.12718204488778054,
+      "totalReturn": -0.6362322550694663,
+      "maxDrawdown": -0.6837388752744278
+    },
+    {
+      "stopLossPct": 0.5,
+      "trailingDrawdownPct": 2,
+      "trades": 426,
+      "winRate": 0.15023474178403756,
+      "totalReturn": -0.638023615467469,
+      "maxDrawdown": -0.68849936147118
+    },
+    {
+      "stopLossPct": 1,
+      "trailingDrawdownPct": 2,
+      "trades": 388,
+      "winRate": 0.23195876288659795,
+      "totalReturn": -0.6495392777383822,
+      "maxDrawdown": -0.8122231928505524
+    },
+    {
+      "stopLossPct": 1.2,
+      "trailingDrawdownPct": 2,
+      "trades": 372,
+      "winRate": 0.26881720430107525,
+      "totalReturn": -0.7189123178617071,
+      "maxDrawdown": -0.813253431746683
+    },
+    {
+      "stopLossPct": 0.8,
+      "trailingDrawdownPct": 2.5,
+      "trades": 371,
+      "winRate": 0.16711590296495957,
+      "totalReturn": -0.7784105127509945,
+      "maxDrawdown": -0.8073492181718418
+    },
+    {
+      "stopLossPct": 0.8,
+      "trailingDrawdownPct": 2,
+      "trades": 405,
+      "winRate": 0.19012345679012346,
+      "totalReturn": -0.7914471270374746,
+      "maxDrawdown": -0.8205287530601096
+    }
+  ]
+}
