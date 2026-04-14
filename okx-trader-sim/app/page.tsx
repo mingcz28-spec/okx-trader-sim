@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatNumber } from '@/lib/format';
 
 type Position = {
@@ -145,6 +145,13 @@ export default function HomePage() {
   const [backtestSort, setBacktestSort] = useState<'return' | 'drawdown' | 'winRate'>('return');
   const [backtestChartCandles, setBacktestChartCandles] = useState<BacktestCandle[]>([]);
   const [backtestTradePoints, setBacktestTradePoints] = useState<BacktestTradePoint[]>([]);
+  const [chartWindow, setChartWindow] = useState<20 | 60 | 120>(20);
+  const [mobileTab, setMobileTab] = useState<'backtest' | 'account' | 'raw'>('backtest');
+  const [selectedTrade, setSelectedTrade] = useState<BacktestTradePoint | null>(null);
+  const [focusedCandleIndex, setFocusedCandleIndex] = useState<number | null>(null);
+  const [showBacktestResults, setShowBacktestResults] = useState(false);
+  const [showEquityCurve, setShowEquityCurve] = useState(false);
+  const backtestResultRef = useRef<HTMLElement | null>(null);
 
   async function refreshState() {
     const res = await fetch('/api/sim');
@@ -230,6 +237,8 @@ export default function HomePage() {
   async function runBacktest() {
     setBacktesting(true);
     setError('');
+    setMessage('正在回测 RAVE 策略，请稍等...');
+    setMobileTab('backtest');
     try {
       const res = await fetch('/api/backtest', {
         method: 'POST',
@@ -245,11 +254,17 @@ export default function HomePage() {
       setBacktestResults(data.results || []);
       setBacktestTop(top);
       setBacktestCandles(Number(data.candles || 0));
+      setShowBacktestResults(true);
       setSelectedBacktestKey(top[0] ? `${top[0].stopLossPct}-${top[0].trailingDrawdownPct}` : '');
-      setMessage(`RAVE-USDT-SWAP 回测完成，样本 ${data.candles} 根 1H K 线。`);
       if (top[0]) {
         await loadBacktestDetail(top[0].stopLossPct, top[0].trailingDrawdownPct);
+        setMessage(`回测完成，共 ${data.results?.length || top.length || 0} 组结果，已自动选中 ${top[0].stopLossPct}% / ${top[0].trailingDrawdownPct}%。`);
+      } else {
+        setMessage(`回测完成，但暂时没有可用结果。样本 ${data.candles} 根 1H K 线。`);
       }
+      setTimeout(() => {
+        backtestResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
     } finally {
       setBacktesting(false);
     }
@@ -282,8 +297,13 @@ export default function HomePage() {
       trailingDrawdownPct: result.trailingDrawdownPct,
     }));
     setSelectedBacktestKey(`${result.stopLossPct}-${result.trailingDrawdownPct}`);
-    setMessage(`已将回测参数带入策略表单: 止损 ${result.stopLossPct}% , 回撤卖出 ${result.trailingDrawdownPct}%。`);
+    setMessage(`已切换到 ${result.stopLossPct}% / ${result.trailingDrawdownPct}%，图表和交易明细正在更新。`);
+    setMobileTab('backtest');
+    setShowBacktestResults(true);
     loadBacktestDetail(result.stopLossPct, result.trailingDrawdownPct);
+    setTimeout(() => {
+      backtestResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
   }
 
   async function saveStrategyConfig() {
@@ -340,26 +360,44 @@ export default function HomePage() {
   });
   const bestBacktest = sortedBacktestResults[0];
   const selectedBacktest = sortedBacktestResults.find((r) => `${r.stopLossPct}-${r.trailingDrawdownPct}` === selectedBacktestKey);
-  const chartCandles = backtestChartCandles.slice(-120);
-  const chartWidth = 1100;
-  const chartHeight = 360;
-  const chartPad = 28;
-  const minPrice = chartCandles.length ? Math.min(...chartCandles.map((c) => c.low)) : 0;
-  const maxPrice = chartCandles.length ? Math.max(...chartCandles.map((c) => c.high)) : 1;
-  const priceRange = Math.max(maxPrice - minPrice, 1);
+  const chartCandles = backtestChartCandles.slice(-chartWindow);
+  const focusedCandle = focusedCandleIndex != null ? chartCandles[focusedCandleIndex] : null;
+  const latestCandle = focusedCandle ?? chartCandles[chartCandles.length - 1];
+  const latestChangePct = latestCandle ? ((latestCandle.close - latestCandle.open) / Math.max(latestCandle.open, 1e-9)) * 100 : 0;
+  const chartWidth = 1180;
+  const chartHeight = 420;
+  const chartPad = 48;
+  const rawMinPrice = chartCandles.length ? Math.min(...chartCandles.map((c) => c.low)) : 0;
+  const rawMaxPrice = chartCandles.length ? Math.max(...chartCandles.map((c) => c.high)) : 1;
+  const rawPriceRange = Math.max(rawMaxPrice - rawMinPrice, 0.00000001);
+  const paddedMinPrice = rawMinPrice - rawPriceRange * 0.05;
+  const paddedMaxPrice = rawMaxPrice + rawPriceRange * 0.05;
+  const minPrice = Math.max(0, paddedMinPrice);
+  const maxPrice = paddedMaxPrice;
+  const priceRange = Math.max(maxPrice - minPrice, 1e-9);
   const candleGap = chartCandles.length ? (chartWidth - chartPad * 2) / chartCandles.length : 1;
   const candleBodyWidth = Math.max(2, candleGap * 0.58);
   const yOf = (price: number) => chartHeight - chartPad - ((price - minPrice) / priceRange) * (chartHeight - chartPad * 2);
   const xOf = (index: number) => chartPad + index * candleGap + candleGap / 2;
   const chartTrades = backtestTradePoints.filter((t) => chartCandles.some((c) => c.ts === t.entryTs) || chartCandles.some((c) => c.ts === t.exitTs));
+  const focusedTrade = focusedCandle ? chartTrades.find((t) => t.entryTs === focusedCandle.ts || t.exitTs === focusedCandle.ts) : null;
+  const chartPriceTicks = chartCandles.length ? [maxPrice, minPrice + priceRange * 0.75, minPrice + priceRange * 0.5, minPrice + priceRange * 0.25, minPrice] : [];
+  const chartDateTicks = chartCandles.length ? [0, Math.floor((chartCandles.length - 1) / 2), chartCandles.length - 1] : [];
+  const focusX = focusedCandleIndex != null ? xOf(focusedCandleIndex) : null;
+  const candleRangeSeries = chartCandles.map((c) => ({
+    ts: c.ts,
+    range: c.high - c.low,
+    up: c.close >= c.open,
+  }));
+  const maxCandleRange = candleRangeSeries.length ? Math.max(...candleRangeSeries.map((c) => c.range), 1e-9) : 1;
   const equitySeries = backtestTradePoints.reduce<Array<{ idx: number; equity: number }>>((acc, trade, index) => {
     const prev = acc.length ? acc[acc.length - 1].equity : 1;
     acc.push({ idx: index, equity: prev * (1 + trade.ret) });
     return acc;
   }, []);
   const equityWidth = 1100;
-  const equityHeight = 220;
-  const equityPad = 24;
+  const equityHeight = 260;
+  const equityPad = 48;
   const minEquity = equitySeries.length ? Math.min(1, ...equitySeries.map((p) => p.equity)) : 0;
   const maxEquity = equitySeries.length ? Math.max(1, ...equitySeries.map((p) => p.equity)) : 1;
   const equityRange = Math.max(maxEquity - minEquity, 0.0001);
@@ -368,31 +406,54 @@ export default function HomePage() {
     const y = equityHeight - equityPad - ((p.equity - minEquity) / equityRange) * (equityHeight - equityPad * 2);
     return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
   }).join(' ');
+  const equityTicks = equitySeries.length ? [maxEquity, minEquity + equityRange * 0.66, minEquity + equityRange * 0.33, minEquity] : [];
+  const equityXLabels = equitySeries.length ? [0, Math.floor((equitySeries.length - 1) / 2), equitySeries.length - 1] : [];
 
   return (
     <main>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div>
-          <div className="badge">OKX 原始接口面板</div>
-          <h1 style={{ margin: '12px 0 8px', fontSize: 34 }}>合约交易控制台</h1>
-          <div className="small">按你的要求，界面直接显示 OKX API 原始数据，不做任何换算。</div>
+      <div className="marketStrip">
+        <div className="marketChip">
+          <span>标的</span>
+          <strong>RAVE-USDT-SWAP</strong>
         </div>
-        <div className="card" style={{ minWidth: 280 }}>
-          <div className="small">策略状态</div>
-          <div className={`kpi ${state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}`}>
-            {loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}
-          </div>
-          <div className="small">API Key: {maskedApiKey}</div>
-          <div className="small">当前模式: {syncMode === 'live' ? '真实盘' : '模拟盘'}</div>
+        <div className="marketChip">
+          <span>模式</span>
+          <strong>{syncMode === 'live' ? '真实盘' : '模拟盘'}</strong>
+        </div>
+        <div className="marketChip">
+          <span>状态</span>
+          <strong className={state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}>{loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}</strong>
+        </div>
+        <div className="marketChip">
+          <span>可用余额</span>
+          <strong>{formatNumber(state.availableMargin, 4)}</strong>
+        </div>
+      </div>
+      <div className="hero okxHero">
+        <div>
+          <div className="badge">OKX 风格交易面板</div>
+          <h1 className="heroTitle">合约交易看板</h1>
+          <div className="small">页面尽量用常见交易页面的说法展示数据，减少技术化字段。</div>
+        </div>
+        <div className="card statusCard compactStatusCard">
+          <div className="statusRow"><span className="small">策略状态</span><strong className={state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}>{loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}</strong></div>
+          <div className="statusRow"><span className="small">API Key</span><strong>{maskedApiKey}</strong></div>
+          <div className="statusRow"><span className="small">数据模式</span><strong>{syncMode === 'live' ? '真实盘' : '模拟盘'}</strong></div>
         </div>
       </div>
 
-      {message ? <div className="card" style={{ marginBottom: 16 }}>{message}</div> : null}
+      {message ? <div className="card flashCard" style={{ marginBottom: 16 }}>{message}</div> : null}
       {error ? <div className="card bad" style={{ marginBottom: 16 }}>{error}</div> : null}
 
-      <div className="grid">
-        <section className="card">
-          <h2>API 配置</h2>
+      <nav className="mobileTabs">
+        <button className={mobileTab === 'backtest' ? 'mobileTab active' : 'mobileTab'} onClick={() => setMobileTab('backtest')}>回测</button>
+        <button className={mobileTab === 'account' ? 'mobileTab active' : 'mobileTab'} onClick={() => setMobileTab('account')}>账户</button>
+        <button className={mobileTab === 'raw' ? 'mobileTab active' : 'mobileTab'} onClick={() => setMobileTab('raw')}>原始数据</button>
+      </nav>
+
+      <div className="grid mobileSection" data-tab="account" data-active={mobileTab === 'account'}>
+        <section className="card panelCard">
+          <div className="panelHeader"><div><div className="sectionTag">连接</div><h2>账户连接</h2></div></div>
           <label>API Key</label>
           <input value={apiForm.apiKey} onChange={(e) => setApiForm({ ...apiForm, apiKey: e.target.value })} placeholder="okx-api-key" />
           <label style={{ marginTop: 12 }}>Secret Key</label>
@@ -413,28 +474,28 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="card">
-          <h2>策略准备</h2>
-          <div className="small">策略规则，买入后两种卖出条件满足任一即卖出。</div>
+        <section className="card panelCard accentPanel">
+          <div className="panelHeader"><div><div className="sectionTag">策略</div><h2>交易规则</h2></div></div>
+          <div className="small">买入后满足止损或回撤条件之一，就会触发卖出。</div>
           <label style={{ marginTop: 12 }}>启用策略</label>
           <select value={strategyForm.enabled ? 'on' : 'off'} onChange={(e) => setStrategyForm({ ...strategyForm, enabled: e.target.value === 'on' })}>
             <option value="off">关闭</option>
             <option value="on">开启</option>
           </select>
-          <label style={{ marginTop: 12 }}>买入后跌幅止损 (%)</label>
+          <label style={{ marginTop: 12 }}>止损比例 (%)</label>
           <input value={strategyForm.stopLossPct} onChange={(e) => setStrategyForm({ ...strategyForm, stopLossPct: Number(e.target.value) })} />
-          <label style={{ marginTop: 12 }}>相对最高价回撤卖出 (%)</label>
+          <label style={{ marginTop: 12 }}>回撤卖出比例 (%)</label>
           <input value={strategyForm.trailingDrawdownPct} onChange={(e) => setStrategyForm({ ...strategyForm, trailingDrawdownPct: Number(e.target.value) })} />
-          <div className="small" style={{ marginTop: 12 }}>规则: 1) 跌破买入价 {strategyForm.stopLossPct}% 卖出, 2) 从买入后最高价回撤 {strategyForm.trailingDrawdownPct}% 卖出。</div>
+          <div className="small" style={{ marginTop: 12 }}>规则说明: 跌破买入价 {strategyForm.stopLossPct}% 卖出，或从买入后最高价回撤 {strategyForm.trailingDrawdownPct}% 卖出。</div>
           <div className="row" style={{ marginTop: 12 }}>
             <button onClick={saveStrategyConfig}>保存策略</button>
             <button className="secondary" onClick={runBacktest}>{backtesting ? '回测中...' : '回测 RAVE 策略'}</button>
           </div>
         </section>
 
-        <section className="card">
-          <h2>OKX 官方关键字段</h2>
-          <div className="small">这些值直接来自接口，不做任何换算。</div>
+        <section className="card panelCard">
+          <div className="panelHeader"><div><div className="sectionTag">账户概览</div><h2>账户核心数据</h2></div></div>
+          <div className="small">这些数值直接来自交易所返回结果，不做额外换算。</div>
           <div className="row" style={{ marginTop: 16 }}>
             <div>
               <div className="small">totalEq</div>
@@ -447,23 +508,44 @@ export default function HomePage() {
           </div>
           <div className="row" style={{ marginTop: 16 }}>
             <div>
-              <div className="small">availableBalance (parsed)</div>
+              <div className="small">可用余额</div>
               <div className="kpi">{formatNumber(state.availableMargin, 8)}</div>
             </div>
             <div>
-              <div className="small">details count</div>
+              <div className="small">资产项数量</div>
               <div className="kpi">{balanceTop?.details?.length ?? 0}</div>
             </div>
           </div>
         </section>
       </div>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>RAVE 策略回测结果</h2>
-        <div className="small">样本: {backtestCandles || 0} 根 1H K 线。只用于测试，不代表实盘表现。</div>
+      <div className="mobileSection" data-tab="backtest" data-active={mobileTab === 'backtest'}>
+      <section className="card mobileSummaryBar backtestSummarySection" style={{ marginTop: 16 }}>
+        <div className="mobileSummaryGrid">
+          <div>
+            <div className="small">样本</div>
+            <div className="kpi">{backtestCandles || 0}</div>
+          </div>
+          <div>
+            <div className="small">较优组合</div>
+            <div className="kpi">{bestBacktest ? `${bestBacktest.stopLossPct}/${bestBacktest.trailingDrawdownPct}` : '-'}</div>
+          </div>
+          <div>
+            <div className="small">当前选中</div>
+            <div className="kpi">{selectedBacktest ? `${selectedBacktest.stopLossPct}/${selectedBacktest.trailingDrawdownPct}` : '-'}</div>
+          </div>
+        </div>
+      </section>
+      <section className="card backtestResultCard panelCard backtestResultSection" style={{ marginTop: 16 }} ref={backtestResultRef}>
+        <div className="panelHeader"><div><div className="sectionTag">回测结果</div><h2>RAVE 策略表现</h2></div></div>
+        <div className="collapseBar">
+          <div className="small">样本: {backtestCandles || 0} 根 1H K 线。只用于测试，不代表实盘表现。</div>
+          <button className="secondary collapseBtn" onClick={() => setShowBacktestResults((v) => !v)}>{showBacktestResults ? '收起结果' : '展开结果'}</button>
+        </div>
+        {showBacktestResults ? <>
         <div className="row" style={{ marginTop: 12, alignItems: 'end' }}>
           <div>
-            <label>排序方式</label>
+            <label>查看方式</label>
             <select value={backtestSort} onChange={(e) => setBacktestSort(e.target.value as 'return' | 'drawdown' | 'winRate')}>
               <option value="return">收益优先</option>
               <option value="drawdown">回撤优先</option>
@@ -473,7 +555,7 @@ export default function HomePage() {
         </div>
         <div className="row" style={{ marginTop: 16, alignItems: 'stretch' }}>
           <div style={{ flex: 1 }}>
-            <div className="small">当前最优候选</div>
+            <div className="small">较优组合</div>
             <div className="kpi">{bestBacktest ? `${bestBacktest.stopLossPct}% / ${bestBacktest.trailingDrawdownPct}%` : '-'}</div>
             <div className="small">总收益 {bestBacktest ? `${formatNumber(bestBacktest.totalReturn * 100, 2)}%` : '-'}</div>
           </div>
@@ -483,12 +565,26 @@ export default function HomePage() {
             <div className="small">最大回撤 {selectedBacktest ? `${formatNumber(selectedBacktest.maxDrawdown * 100, 2)}%` : '-'}</div>
           </div>
           <div style={{ flex: 1 }}>
-            <div className="small">当前策略表单</div>
+            <div className="small">当前规则</div>
             <div className="kpi">{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</div>
             <div className="small">可直接保存为默认参数</div>
           </div>
         </div>
-        <table className="table" style={{ marginTop: 16 }}>
+        <div className="mobileList">
+          {sortedBacktestResults.length ? sortedBacktestResults.map((r) => {
+            const key = `${r.stopLossPct}-${r.trailingDrawdownPct}`;
+            const isSelected = key === selectedBacktestKey;
+            return (
+              <div className="mobileItem" key={key} style={isSelected ? { borderColor: '#60a5fa' } : undefined}>
+                <div><span className="small">规则组合</span><strong>{r.stopLossPct}% / {r.trailingDrawdownPct}%</strong></div>
+                <div><span className="small">交易次数 / 胜率</span><strong>{r.trades} / {formatNumber(r.winRate * 100, 2)}%</strong></div>
+                <div><span className="small">总收益 / 最大回撤</span><strong>{formatNumber(r.totalReturn * 100, 2)}% / {formatNumber(r.maxDrawdown * 100, 2)}%</strong></div>
+                <div><button className="secondary" onClick={() => applyBacktestParams(r)}>{isSelected ? '已选中' : '应用到策略'}</button></div>
+              </div>
+            );
+          }) : <div className="small">还没有回测结果，点“回测 RAVE 策略”即可。</div>}
+        </div>
+        <table className="table desktopOnly" style={{ marginTop: 16 }}>
           <thead>
             <tr>
               <th>止损 %</th>
@@ -512,7 +608,7 @@ export default function HomePage() {
                   <td>{formatNumber(r.winRate * 100, 2)}%</td>
                   <td>{formatNumber(r.totalReturn * 100, 2)}%</td>
                   <td>{formatNumber(r.maxDrawdown * 100, 2)}%</td>
-                  <td><button className="secondary" onClick={() => applyBacktestParams(r)}>{isSelected ? '已选中' : '应用到策略'}</button></td>
+                  <td><button className="secondary" onClick={() => applyBacktestParams(r)}>{isSelected ? '已选中' : '采用这组'}</button></td>
                 </tr>
               );
             }) : (
@@ -520,16 +616,92 @@ export default function HomePage() {
             )}
           </tbody>
         </table>
+        </> : null}
       </section>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>回测 K 线与买卖点</h2>
-        <div className="small">显示最近 120 根 1H K 线。绿色三角是买点，红色三角是卖点。</div>
+      <section className="card panelCard primaryChartSection okxStageCard" style={{ marginTop: 16 }}>
+        <div className="panelHeader"><div><div className="sectionTag">图表</div><h2>K 线主图区</h2></div></div>
+        <div className="small">参考欧易主屏布局来收，主图更突出，只保留买点和卖点标记。手机上建议优先看最近 20 或 60 根。</div>
+        <div className="okxTopTabs" style={{ marginTop: 12 }}>
+          <span className="okxTopTab active">图表</span>
+          <span className="okxTopTab">信息</span>
+          <span className="okxTopTab">交易记录</span>
+          <span className="okxTopTab">策略</span>
+        </div>
+        {latestCandle ? (
+          <div className="tickerBar okxTickerBar" style={{ marginTop: 12 }}>
+            <div className="tickerMain">
+              <strong>RAVEUSDT 永续</strong>
+              <span className={latestChangePct >= 0 ? 'good' : 'bad'}>{formatNumber(latestCandle.close, 6)}</span>
+            </div>
+            <div className="tickerStats">
+              <span>开 {formatNumber(latestCandle.open, 6)}</span>
+              <span>高 {formatNumber(latestCandle.high, 6)}</span>
+              <span>低 {formatNumber(latestCandle.low, 6)}</span>
+              <span>收 {formatNumber(latestCandle.close, 6)}</span>
+              <span>窗口 {chartWindow} 根</span>
+            </div>
+          </div>
+        ) : null}
+        {focusedCandle ? (
+          <div className="hoverInfoCard" style={{ marginTop: 12 }}>
+            <div className="hoverInfoHead">
+              <strong>{new Date(focusedCandle.ts).toLocaleString('zh-CN', { hour12: false })}</strong>
+              <span>{focusedTrade ? `交易点 ${focusedTrade.entryTs === focusedCandle.ts ? '买入' : '卖出'}` : '无交易点'}</span>
+            </div>
+            <div className="hoverInfoGrid">
+              <span>开 {formatNumber(focusedCandle.open, 6)}</span>
+              <span>高 {formatNumber(focusedCandle.high, 6)}</span>
+              <span>低 {formatNumber(focusedCandle.low, 6)}</span>
+              <span>收 {formatNumber(focusedCandle.close, 6)}</span>
+              <span>振幅 {formatNumber(focusedCandle.high - focusedCandle.low, 6)}</span>
+              <span>{focusedTrade ? `信号 ${focusedTrade.entryTs === focusedCandle.ts ? 'B 买入' : 'S 卖出'}` : '等待信号'}</span>
+            </div>
+          </div>
+        ) : null}
+        <div className="chartToolbar okxToolbar" style={{ marginTop: 12 }}>
+          <div className="chartLegend okxLegendRow">
+            <button className={chartWindow === 20 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(20)}>1D</button>
+            <button className={chartWindow === 60 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(60)}>1W</button>
+            <button className={chartWindow === 120 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(120)}>1M</button>
+            <span><i className="legendDot buy"></i>买点</span>
+            <span><i className="legendDot sell"></i>卖点</span>
+          </div>
+          <div className="chartControls">
+            <label>K 线窗口</label>
+            <select value={String(chartWindow)} onChange={(e) => setChartWindow(Number(e.target.value) as 20 | 60 | 120)}>
+              <option value="20">最近 20 根</option>
+              <option value="60">最近 60 根</option>
+              <option value="120">最近 120 根</option>
+            </select>
+          </div>
+        </div>
         {chartCandles.length ? (
-          <div className="chartWrap" style={{ marginTop: 16 }}>
+          <div className="chartWrap okxChartWrap" style={{ marginTop: 16 }}>
             <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="backtestChart" role="img" aria-label="Backtest candle chart">
-              <line x1={chartPad} y1={chartPad} x2={chartPad} y2={chartHeight - chartPad} stroke="rgba(159,176,208,0.35)" />
-              <line x1={chartPad} y1={chartHeight - chartPad} x2={chartWidth - chartPad} y2={chartHeight - chartPad} stroke="rgba(159,176,208,0.35)" />
+              <rect x={0} y={0} width={chartWidth} height={chartHeight} fill="#0b1420" />
+              {chartPriceTicks.map((tick) => {
+                const y = yOf(tick);
+                return (
+                  <g key={`price-${tick}`}>
+                    <line x1={chartPad} y1={y} x2={chartWidth - chartPad} y2={y} stroke="rgba(255,255,255,0.07)" strokeDasharray="3 6" />
+                    <text x={chartWidth - chartPad + 8} y={y + 4} textAnchor="start" fontSize="12" fill="rgba(159,176,208,0.88)">{formatNumber(tick, 6)}</text>
+                  </g>
+                );
+              })}
+              {chartDateTicks.map((tickIndex) => {
+                const candle = chartCandles[tickIndex];
+                if (!candle) return null;
+                const x = xOf(tickIndex);
+                return (
+                  <g key={`date-${candle.ts}`}>
+                    <line x1={x} y1={chartPad} x2={x} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.05)" />
+                    <text x={x} y={chartHeight - chartPad + 22} textAnchor="middle" fontSize="12" fill="rgba(159,176,208,0.85)">{new Date(candle.ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>
+                  </g>
+                );
+              })}
+              <line x1={chartPad} y1={chartPad} x2={chartPad} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.08)" />
+              <line x1={chartPad} y1={chartHeight - chartPad} x2={chartWidth - chartPad} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.08)" />
               {chartCandles.map((c, index) => {
                 const x = xOf(index);
                 const openY = yOf(c.open);
@@ -538,14 +710,21 @@ export default function HomePage() {
                 const lowY = yOf(c.low);
                 const up = c.close >= c.open;
                 const bodyTop = Math.min(openY, closeY);
-                const bodyHeight = Math.max(Math.abs(closeY - openY), 1.5);
+                const bodyHeight = Math.max(Math.abs(closeY - openY), 2);
+                const isFocused = focusedCandleIndex === index;
                 return (
-                  <g key={c.ts}>
-                    <line x1={x} y1={highY} x2={x} y2={lowY} stroke={up ? '#35d07f' : '#ff6b81'} strokeWidth="1.2" />
-                    <rect x={x - candleBodyWidth / 2} y={bodyTop} width={candleBodyWidth} height={bodyHeight} fill={up ? '#35d07f' : '#ff6b81'} opacity="0.92" />
+                  <g key={c.ts} onMouseEnter={() => setFocusedCandleIndex(index)} onClick={() => setFocusedCandleIndex(index)} style={{ cursor: 'crosshair' }}>
+                    <line x1={x} y1={highY} x2={x} y2={lowY} stroke={up ? '#00c087' : '#ff5b6e'} strokeWidth={isFocused ? '1.8' : '1.2'} />
+                    <rect x={x - candleBodyWidth / 2} y={bodyTop} width={candleBodyWidth} height={bodyHeight} rx={1} fill={up ? '#00c087' : '#ff5b6e'} opacity={isFocused ? '1' : '0.96'} />
                   </g>
                 );
               })}
+              {focusX != null ? (
+                <g>
+                  <line x1={focusX} y1={chartPad} x2={focusX} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 6" />
+                  {latestCandle ? <line x1={chartPad} y1={yOf(latestCandle.close)} x2={chartWidth - chartPad} y2={yOf(latestCandle.close)} stroke="rgba(45,140,255,0.2)" strokeDasharray="4 6" /> : null}
+                </g>
+              ) : null}
               {chartTrades.map((t, idx) => {
                 const entryIndex = chartCandles.findIndex((c) => c.ts === t.entryTs);
                 const exitIndex = chartCandles.findIndex((c) => c.ts === t.exitTs);
@@ -557,51 +736,138 @@ export default function HomePage() {
                 const exitTitle = `卖出\n时间: ${new Date(t.exitTs).toLocaleString('zh-CN', { hour12: false })}\n价格: ${formatNumber(t.exitPrice, 8)}\n收益: ${formatNumber(t.ret * 100, 2)}%\n原因: ${t.reason === 'stop_loss' ? '止损卖出' : '回撤卖出'}`;
                 return (
                   <g key={`${t.entryTs}-${t.exitTs}-${idx}`}>
+                    {ex != null && xx != null ? <line x1={ex} y1={ey} x2={xx} y2={xy} stroke="rgba(96,165,250,0.18)" strokeDasharray="3 5" /> : null}
                     {ex != null ? (
-                      <polygon points={`${ex},${ey - 10} ${ex - 7},${ey + 4} ${ex + 7},${ey + 4}`} fill="#60a5fa">
-                        <title>{entryTitle}</title>
-                      </polygon>
+                      <g onClick={() => setSelectedTrade(t)} style={{ cursor: 'pointer' }}>
+                        <circle cx={ex} cy={ey} r={9} fill="rgba(41, 121, 255, 0.16)" />
+                        <text x={ex} y={ey + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="#2d8cff">B</text>
+                        <polygon points={`${ex},${ey - 13} ${ex - 8},${ey + 3} ${ex + 8},${ey + 3}`} fill="#2d8cff">
+                          <title>{entryTitle}</title>
+                        </polygon>
+                      </g>
                     ) : null}
                     {xx != null ? (
-                      <polygon points={`${xx},${xy + 10} ${xx - 7},${xy - 4} ${xx + 7},${xy - 4}`} fill={t.reason === 'stop_loss' ? '#ff6b81' : '#f5b942'}>
-                        <title>{exitTitle}</title>
-                      </polygon>
+                      <g onClick={() => setSelectedTrade(t)} style={{ cursor: 'pointer' }}>
+                        <circle cx={xx} cy={xy} r={9} fill="rgba(255, 91, 110, 0.16)" />
+                        <text x={xx} y={xy + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill={t.reason === 'stop_loss' ? '#ff5b6e' : '#f5b942'}>S</text>
+                        <polygon points={`${xx},${xy + 13} ${xx - 8},${xy - 3} ${xx + 8},${xy - 3}`} fill={t.reason === 'stop_loss' ? '#ff5b6e' : '#f5b942'}>
+                          <title>{exitTitle}</title>
+                        </polygon>
+                      </g>
                     ) : null}
-                    {ex != null && xx != null ? <line x1={ex} y1={ey} x2={xx} y2={xy} stroke="rgba(96,165,250,0.28)" strokeDasharray="4 4" /> : null}
                   </g>
                 );
               })}
             </svg>
           </div>
         ) : (
-          <div className="small" style={{ marginTop: 12 }}>先运行回测，或从结果表里选择一组参数。</div>
+          <div className="small" style={{ marginTop: 12 }}>当前没有 K 线，是因为这个线上实例还没有生成回测明细。先点“回测 RAVE 策略”，再从结果表里选一组参数即可。</div>
         )}
+        {candleRangeSeries.length ? (
+          <div className="miniIndicatorWrap">
+            <div className="small">波动副图（按每根 K 线高低差）</div>
+            <div className="chartWrap okxChartWrap miniWrap" style={{ marginTop: 8 }}>
+              <svg viewBox={`0 0 ${chartWidth} 120`} className="backtestChart" role="img" aria-label="Candle range sub chart">
+                <rect x={0} y={0} width={chartWidth} height={120} fill="#0b1420" />
+                {candleRangeSeries.map((c, index) => {
+                  const x = xOf(index);
+                  const h = Math.max((c.range / Math.max(maxCandleRange, 1e-9)) * 84, 2);
+                  const y = 104 - h;
+                  const isFocused = focusedCandleIndex === index;
+                  return <rect key={`${c.ts}-range`} x={x - Math.max(candleBodyWidth / 2, 3)} y={y} width={Math.max(candleBodyWidth, 6)} height={h} fill={c.up ? '#00c087' : '#ff5b6e'} opacity={isFocused ? '1' : '0.72'} rx={1} onMouseEnter={() => setFocusedCandleIndex(index)} onClick={() => setFocusedCandleIndex(index)} />;
+                })}
+                {focusX != null ? <line x1={focusX} y1={8} x2={focusX} y2={104} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 6" /> : null}
+              </svg>
+            </div>
+          </div>
+        ) : null}
         <div className="row" style={{ marginTop: 16 }}>
           <div className="small">买点数: {chartTrades.length}</div>
           <div className="small">卖点数: {chartTrades.length}</div>
         </div>
+        <div className="chartMetaRow">
+          <div className="small">当前参数: {selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</div>
+          <div className="small">总收益: {selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '-'}</div>
+          <div className="small">最大回撤: {selectedBacktest ? `${formatNumber(selectedBacktest.maxDrawdown * 100, 2)}%` : '-'}</div>
+        </div>
+        <div className="chartActionRow">
+          <button className="secondary" onClick={runBacktest} disabled={backtesting}>{backtesting ? '回测中...' : '重新运行回测'}</button>
+          <button className="secondary" onClick={() => backtestResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看参数结果</button>
+        </div>
+        {selectedTrade ? (
+          <div className="tradeDetailCard">
+            <div className="row">
+              <div><span className="small">买入时间</span><div>{new Date(selectedTrade.entryTs).toLocaleString('zh-CN', { hour12: false })}</div></div>
+              <div><span className="small">买入价格</span><div>{formatNumber(selectedTrade.entryPrice, 8)}</div></div>
+            </div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div><span className="small">卖出时间</span><div>{new Date(selectedTrade.exitTs).toLocaleString('zh-CN', { hour12: false })}</div></div>
+              <div><span className="small">卖出价格</span><div>{formatNumber(selectedTrade.exitPrice, 8)}</div></div>
+            </div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div><span className="small">收益率</span><div className={selectedTrade.ret >= 0 ? 'good' : 'bad'}>{formatNumber(selectedTrade.ret * 100, 2)}%</div></div>
+              <div><span className="small">卖出原因</span><div>{selectedTrade.reason === 'stop_loss' ? '止损卖出' : '回撤卖出'}</div></div>
+            </div>
+            <button className="secondary" style={{ marginTop: 12 }} onClick={() => setSelectedTrade(null)}>关闭详情</button>
+          </div>
+        ) : null}
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>回测资金曲线</h2>
-        <div className="small">从 1.0 初始资金开始，按每笔交易收益连续复利，方便看策略过程是否平滑。</div>
-        {equitySeries.length ? (
+        <div className="collapseBar">
+          <div>
+            <h2 style={{ margin: 0 }}>回测资金曲线</h2>
+            <div className="small">从 1.0 初始资金开始，按每笔交易收益连续复利。</div>
+          </div>
+          <button className="secondary collapseBtn" onClick={() => setShowEquityCurve((v) => !v)}>{showEquityCurve ? '收起曲线' : '展开曲线'}</button>
+        </div>
+        {showEquityCurve && equitySeries.length ? (
           <div className="chartWrap" style={{ marginTop: 16 }}>
             <svg viewBox={`0 0 ${equityWidth} ${equityHeight}`} className="backtestChart" role="img" aria-label="Backtest equity curve">
               <line x1={equityPad} y1={equityPad} x2={equityPad} y2={equityHeight - equityPad} stroke="rgba(159,176,208,0.35)" />
               <line x1={equityPad} y1={equityHeight - equityPad} x2={equityWidth - equityPad} y2={equityHeight - equityPad} stroke="rgba(159,176,208,0.35)" />
+              {equityTicks.map((tick) => {
+                const y = equityHeight - equityPad - ((tick - minEquity) / equityRange) * (equityHeight - equityPad * 2);
+                return (
+                  <g key={`equity-${tick}`}>
+                    <line x1={equityPad} y1={y} x2={equityWidth - equityPad} y2={y} stroke="rgba(159,176,208,0.12)" />
+                    <text x={equityPad - 10} y={y + 4} textAnchor="end" fontSize="12" fill="rgba(159,176,208,0.85)">{formatNumber(tick, 4)}</text>
+                  </g>
+                );
+              })}
+              {equityXLabels.map((idx) => {
+                const x = equityPad + (idx / Math.max(equitySeries.length - 1, 1)) * (equityWidth - equityPad * 2);
+                return (
+                  <g key={`equity-x-${idx}`}>
+                    <line x1={x} y1={equityPad} x2={x} y2={equityHeight - equityPad} stroke="rgba(159,176,208,0.08)" />
+                    <text x={x} y={equityHeight - equityPad + 20} textAnchor="middle" fontSize="12" fill="rgba(159,176,208,0.85)">{idx + 1}</text>
+                  </g>
+                );
+              })}
+              <text x={22} y={18} fontSize="12" fill="rgba(159,176,208,0.85)">净值</text>
+              <text x={equityWidth - 18} y={equityHeight - 12} textAnchor="end" fontSize="12" fill="rgba(159,176,208,0.85)">交易序号</text>
               <path d={equityPath} fill="none" stroke="#60a5fa" strokeWidth="2.5" />
             </svg>
           </div>
-        ) : (
-          <div className="small" style={{ marginTop: 12 }}>暂无资金曲线，请先运行回测。</div>
-        )}
+        ) : showEquityCurve ? (
+          <div className="small" style={{ marginTop: 12 }}>暂无资金曲线，请先运行回测并生成交易明细。</div>
+        ) : null}
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>回测交易过程明细</h2>
-        <div className="small">逐笔检查买点、卖点、收益和卖出原因，更容易判断这套规则是否合理。</div>
-        <table className="table" style={{ marginTop: 16 }}>
+        <h2>交易记录</h2>
+        <div className="small">逐笔查看买入、卖出、收益和原因，更容易判断这套规则是否合理。</div>
+        <div className="mobileList">
+          {backtestTradePoints.length ? backtestTradePoints.slice(-40).reverse().map((t, idx) => (
+            <div className="mobileItem" key={`${t.entryTs}-${t.exitTs}-${idx}`}>
+              <div><span className="small">买入</span><strong>{new Date(t.entryTs).toLocaleString('zh-CN', { hour12: false })}</strong></div>
+              <div><span className="small">买入价 / 卖出价</span><strong>{formatNumber(t.entryPrice, 8)} / {formatNumber(t.exitPrice, 8)}</strong></div>
+              <div><span className="small">卖出</span><strong>{new Date(t.exitTs).toLocaleString('zh-CN', { hour12: false })}</strong></div>
+              <div><span className="small">收益率 / 原因</span><strong className={t.ret >= 0 ? 'good' : 'bad'}>{formatNumber(t.ret * 100, 2)}% / {t.reason === 'stop_loss' ? '止损' : '回撤'}</strong></div>
+            </div>
+          )) : <div className="small" style={{ marginTop: 12 }}>暂无交易过程，请先运行回测。</div>}
+        </div>
+        <table className="table desktopOnly" style={{ marginTop: 16 }}>
           <thead>
             <tr>
               <th>买入时间</th>
@@ -629,15 +895,44 @@ export default function HomePage() {
         </table>
       </section>
 
+      </div>
+
+      <div className="mobileSection" data-tab="account" data-active={mobileTab === 'account'}>
+      <section className="card mobileSummaryBar" style={{ marginTop: 16 }}>
+        <div className="mobileSummaryGrid">
+          <div>
+            <div className="small">账户权益</div>
+            <div className="kpi">{balanceTop?.totalEq ?? '-'}</div>
+          </div>
+          <div>
+            <div className="small">调整后权益</div>
+            <div className="kpi">{balanceTop?.adjEq ?? '-'}</div>
+          </div>
+          <div>
+            <div className="small">可用余额</div>
+            <div className="kpi">{formatNumber(state.availableMargin, 4)}</div>
+          </div>
+        </div>
+      </section>
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>账户资产明细（接口解析）</h2>
-        <table className="table">
+        <h2>账户资产明细</h2>
+        <div className="mobileList">
+          {(state.balanceDetails || []).length ? state.balanceDetails!.map((item) => (
+            <div className="mobileItem" key={item.ccy}>
+              <div><span className="small">币种</span><strong>{item.ccy}</strong></div>
+              <div><span className="small">权益</span><strong>{formatNumber(item.equity, 10)}</strong></div>
+              <div><span className="small">现金余额</span><strong>{formatNumber(item.cashBalance, 10)}</strong></div>
+              <div><span className="small">可用余额</span><strong>{formatNumber(item.availableBalance, 10)}</strong></div>
+            </div>
+          )) : <div className="small">暂无资产明细</div>}
+        </div>
+        <table className="table desktopOnly">
           <thead>
             <tr>
               <th>币种</th>
-              <th>eq</th>
-              <th>cashBal</th>
-              <th>availBal</th>
+              <th>权益</th>
+              <th>现金余额</th>
+              <th>可用余额</th>
             </tr>
           </thead>
           <tbody>
@@ -656,20 +951,31 @@ export default function HomePage() {
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>持仓（接口解析）</h2>
-        <table className="table">
+        <h2>当前持仓</h2>
+        <div className="mobileList">
+          {state.positions.length ? state.positions.map((p) => (
+            <div className="mobileItem" key={p.id}>
+              <div><span className="small">合约</span><strong>{p.symbol}</strong></div>
+              <div><span className="small">方向 / 杠杆</span><strong>{p.side} / {p.leverage}x</strong></div>
+              <div><span className="small">数量</span><strong>{p.quantity ?? '-'}</strong></div>
+              <div><span className="small">开仓价 / 标记价</span><strong>{formatNumber(p.entryPrice, 8)} / {formatNumber(p.markPrice, 8)}</strong></div>
+              <div><span className="small">未实现盈亏</span><strong className={Number(p.unrealizedPnl ?? 0) >= 0 ? 'good' : 'bad'}>{formatNumber(p.unrealizedPnl ?? 0, 8)}</strong></div>
+            </div>
+          )) : <div className="small">暂无持仓</div>}
+        </div>
+        <table className="table desktopOnly">
           <thead>
             <tr>
               <th>合约</th>
               <th>方向</th>
               <th>杠杆</th>
               <th>数量</th>
-              <th>notionalUsd</th>
-              <th>margin</th>
-              <th>upl</th>
-              <th>avgPx</th>
-              <th>markPx</th>
-              <th>uplRatio(%)</th>
+              <th>仓位价值</th>
+              <th>占用保证金</th>
+              <th>未实现盈亏</th>
+              <th>开仓价</th>
+              <th>标记价</th>
+              <th>盈亏比例(%)</th>
             </tr>
           </thead>
           <tbody>
@@ -694,18 +1000,28 @@ export default function HomePage() {
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>订单历史（接口解析）</h2>
-        <table className="table">
+        <h2>历史委托</h2>
+        <div className="mobileList">
+          {(state.orderHistory || []).length ? state.orderHistory!.map((o) => (
+            <div className="mobileItem" key={o.id}>
+              <div><span className="small">时间</span><strong>{new Date(o.createdAt).toLocaleString('zh-CN', { hour12: false })}</strong></div>
+              <div><span className="small">合约</span><strong>{o.symbol}</strong></div>
+              <div><span className="small">方向 / 状态</span><strong>{o.side} / {o.state}</strong></div>
+              <div><span className="small">价格 / 数量</span><strong>{formatNumber(o.price, 8)} / {formatNumber(o.size, 8)}</strong></div>
+            </div>
+          )) : <div className="small">暂无订单历史</div>}
+        </div>
+        <table className="table desktopOnly">
           <thead>
             <tr>
               <th>时间</th>
               <th>合约</th>
               <th>方向</th>
-              <th>类型</th>
+              <th>委托类型</th>
               <th>状态</th>
               <th>价格</th>
               <th>数量</th>
-              <th>已成交</th>
+              <th>已成交数量</th>
             </tr>
           </thead>
           <tbody>
@@ -727,20 +1043,30 @@ export default function HomePage() {
         </table>
       </section>
 
+      </div>
+
+      <div className="mobileSection" data-tab="raw" data-active={mobileTab === 'raw'}>
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>OKX 原始返回: /api/v5/account/balance</h2>
-        <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawBalance}</pre>
+        <details>
+          <summary>OKX 原始返回: /api/v5/account/balance</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawBalance}</pre>
+        </details>
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>OKX 原始返回: /api/v5/account/positions</h2>
-        <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawPositions}</pre>
+        <details>
+          <summary>OKX 原始返回: /api/v5/account/positions</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawPositions}</pre>
+        </details>
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>OKX 原始返回: /api/v5/trade/orders-history-archive</h2>
-        <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawOrders}</pre>
+        <details>
+          <summary>OKX 原始返回: /api/v5/trade/orders-history-archive</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawOrders}</pre>
+        </details>
       </section>
+      </div>
     </main>
   );
 }
