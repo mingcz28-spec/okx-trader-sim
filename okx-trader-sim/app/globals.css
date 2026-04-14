@@ -269,6 +269,50 @@ button:disabled {
   border-color: rgba(255,255,255,0.08);
   box-shadow: 0 16px 40px rgba(0,0,0,0.34);
 }
+.okxChartShell {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.okxToolRail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 0;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(10,18,29,0.98), rgba(8,14,22,0.98));
+}
+.toolDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(159,176,208,0.34);
+}
+.toolDot.active {
+  background: #2d8cff;
+  box-shadow: 0 0 0 4px rgba(45,140,255,0.14);
+}
+.okxMainChartWrap {
+  min-width: 0;
+}
+.okxChartFoot {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+  color: rgba(159,176,208,0.72);
+  font-size: 12px;
+}
+.okxChartFoot span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.04);
+}
 .okxTopTabs {
   display: flex;
   gap: 18px;
@@ -378,6 +422,16 @@ button:disabled {
   gap: 14px;
   flex-wrap: wrap;
   margin-top: 10px;
+}
+.okxBottomStats {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.metaLabel {
+  display: inline-block;
+  margin-right: 8px;
+  color: rgba(159,176,208,0.72);
 }
 .miniIndicatorWrap {
   margin-top: 12px;
@@ -531,6 +585,12 @@ button:disabled {
   .tickerBar {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .okxChartShell {
+    grid-template-columns: 1fr;
+  }
+  .okxToolRail {
+    display: none;
   }
   .okxTopTabs {
     gap: 12px;

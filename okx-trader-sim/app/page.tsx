@@ -699,7 +699,15 @@ export default function HomePage() {
           </div>
         </div>
         {chartCandles.length ? (
-          <div className="chartWrap okxChartWrap" style={{ marginTop: 16 }}>
+          <div className="okxChartShell" style={{ marginTop: 16 }}>
+            <div className="okxToolRail" aria-hidden="true">
+              <span className="toolDot active"></span>
+              <span className="toolDot"></span>
+              <span className="toolDot"></span>
+              <span className="toolDot"></span>
+              <span className="toolDot"></span>
+            </div>
+            <div className="chartWrap okxChartWrap okxMainChartWrap">
             <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="backtestChart" role="img" aria-label="Backtest candle chart">
               <rect x={0} y={0} width={chartWidth} height={chartHeight} fill="#0b1420" />
               <rect x={chartPadLeft} y={chartPadTop} width={plotWidth} height={plotHeight} rx={8} fill="#0d1524" stroke="rgba(255,255,255,0.08)" />
@@ -784,6 +792,13 @@ export default function HomePage() {
                 );
               })}
             </svg>
+            </div>
+            <div className="okxChartFoot">
+              <span>主图</span>
+              <span>价格轴已对齐</span>
+              <span>时间轴细化</span>
+              <span>买卖点联动</span>
+            </div>
           </div>
         ) : (
           <div className="small" style={{ marginTop: 12 }}>当前没有 K 线，是因为这个线上实例还没有生成回测明细。先点“回测 RAVE 策略”，再从结果表里选一组参数即可。</div>
@@ -818,10 +833,10 @@ export default function HomePage() {
           <div className="small">买点数: {chartTrades.length}</div>
           <div className="small">卖点数: {chartTrades.length}</div>
         </div>
-        <div className="chartMetaRow">
-          <div className="small">当前参数: {selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</div>
-          <div className="small">总收益: {selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '-'}</div>
-          <div className="small">最大回撤: {selectedBacktest ? `${formatNumber(selectedBacktest.maxDrawdown * 100, 2)}%` : '-'}</div>
+        <div className="chartMetaRow okxBottomStats">
+          <div className="small"><span className="metaLabel">当前参数</span>{selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</div>
+          <div className="small"><span className="metaLabel">总收益</span>{selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '-'}</div>
+          <div className="small"><span className="metaLabel">最大回撤</span>{selectedBacktest ? `${formatNumber(selectedBacktest.maxDrawdown * 100, 2)}%` : '-'}</div>
         </div>
         <div className="chartActionRow">
           <button className="secondary" onClick={runBacktest} disabled={backtesting}>{backtesting ? '回测中...' : '重新运行回测'}</button>
