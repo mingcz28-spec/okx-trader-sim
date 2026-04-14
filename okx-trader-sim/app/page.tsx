@@ -138,6 +138,7 @@ export default function HomePage() {
   const [tradeForm, setTradeForm] = useState({ symbol: 'BTC-USDT-SWAP', side: 'buy', leverage: 3, notional: 100 });
   const [strategyForm, setStrategyForm] = useState(emptyState.strategyConfig!);
   const [syncMode, setSyncMode] = useState<'demo' | 'live'>('demo');
+  const [appMode, setAppMode] = useState<'market' | 'backtest' | 'realtime'>('backtest');
   const [testing, setTesting] = useState(false);
   const [backtesting, setBacktesting] = useState(false);
   const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([]);
@@ -474,45 +475,45 @@ export default function HomePage() {
     <main>
       <div className="marketStrip">
         <div className="marketChip">
-          <span>标的</span>
-          <strong>RAVE-USDT-SWAP</strong>
-        </div>
-        <div className="marketChip">
-          <span>模式</span>
-          <strong>{syncMode === 'live' ? '真实盘' : '模拟盘'}</strong>
+          <span>可用预测</span>
+          <strong>{selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '--'}</strong>
         </div>
         <div className="marketChip">
           <span>状态</span>
           <strong className={state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}>{loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}</strong>
         </div>
         <div className="marketChip">
-          <span>可用余额</span>
-          <strong>{formatNumber(state.availableMargin, 4)}</strong>
+          <span>模式</span>
+          <strong>{appMode === 'market' ? '真实盘口' : appMode === 'backtest' ? '策略回测' : '实时策略'}</strong>
+        </div>
+        <div className="marketChip">
+          <span>标的</span>
+          <strong>RAVE-USDT-SWAP</strong>
         </div>
       </div>
       <div className="hero okxHero">
         <div>
-          <div className="badge">OKX 风格交易面板</div>
-          <h1 className="heroTitle">合约交易看板</h1>
-          <div className="small">页面尽量用常见交易页面的说法展示数据，减少技术化字段。</div>
+          <div className="badge">M狙击手</div>
+          <h1 className="heroTitle">M狙击手操作界面</h1>
+          <div className="small">用数据说话，以数据制定策略。</div>
         </div>
         <div className="card statusCard compactStatusCard">
           <div className="statusRow"><span className="small">策略状态</span><strong className={state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}>{loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}</strong></div>
           <div className="statusRow"><span className="small">API Key</span><strong>{maskedApiKey}</strong></div>
-          <div className="statusRow"><span className="small">数据模式</span><strong>{syncMode === 'live' ? '真实盘' : '模拟盘'}</strong></div>
+          <div className="statusRow"><span className="small">当前模式</span><strong>{appMode === 'market' ? '真实盘口' : appMode === 'backtest' ? '策略回测' : '实时策略'}</strong></div>
         </div>
       </div>
 
       {message ? <div className="card flashCard" style={{ marginBottom: 16 }}>{message}</div> : null}
       {error ? <div className="card bad" style={{ marginBottom: 16 }}>{error}</div> : null}
 
-      <nav className="mobileTabs">
-        <button className={mobileTab === 'backtest' ? 'mobileTab active' : 'mobileTab'} onClick={() => setMobileTab('backtest')}>回测</button>
-        <button className={mobileTab === 'account' ? 'mobileTab active' : 'mobileTab'} onClick={() => setMobileTab('account')}>账户</button>
-        <button className={mobileTab === 'raw' ? 'mobileTab active' : 'mobileTab'} onClick={() => setMobileTab('raw')}>原始数据</button>
+      <nav className="mobileTabs appModeTabs">
+        <button className={appMode === 'market' ? 'mobileTab active' : 'mobileTab'} onClick={() => setAppMode('market')}>真实盘口</button>
+        <button className={appMode === 'backtest' ? 'mobileTab active' : 'mobileTab'} onClick={() => setAppMode('backtest')}>策略回测</button>
+        <button className={appMode === 'realtime' ? 'mobileTab active' : 'mobileTab'} onClick={() => setAppMode('realtime')}>实时策略</button>
       </nav>
 
-      <div className="grid mobileSection" data-tab="account" data-active={mobileTab === 'account'}>
+      <div className="grid mobileSection" data-tab="account" data-active={appMode === 'market'}>
         <section className="card panelCard">
           <div className="panelHeader"><div><div className="sectionTag">连接</div><h2>账户连接</h2></div></div>
           <label>API Key</label>
@@ -580,7 +581,7 @@ export default function HomePage() {
         </section>
       </div>
 
-      <div className="mobileSection" data-tab="backtest" data-active={mobileTab === 'backtest'}>
+      <div className="mobileSection" data-tab="backtest" data-active={appMode === 'backtest'}>
       <section className="card mobileSummaryBar backtestSummarySection" style={{ marginTop: 16 }}>
         <div className="mobileSummaryGrid">
           <div>
@@ -1145,26 +1146,35 @@ export default function HomePage() {
 
       </div>
 
-      <div className="mobileSection" data-tab="raw" data-active={mobileTab === 'raw'}>
-      <section className="card" style={{ marginTop: 16 }}>
-        <details>
-          <summary>OKX 原始返回: /api/v5/account/balance</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawBalance}</pre>
-        </details>
+      <div className="mobileSection" data-tab="realtime" data-active={appMode === 'realtime'}>
+      <section className="card panelCard" style={{ marginTop: 16 }}>
+        <div className="panelHeader"><div><div className="sectionTag">实时策略</div><h2>实时策略总览</h2></div></div>
+        <div className="small">选择策略回测中的策略后，这里会接入实时数据并持续显示策略收益情况。</div>
+        <div className="row" style={{ marginTop: 16 }}>
+          <div>
+            <div className="small">当前策略</div>
+            <div className="kpi">买入 / 卖出</div>
+          </div>
+          <div>
+            <div className="small">最佳参数</div>
+            <div className="kpi">{selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</div>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 16 }}>
+          <div>
+            <div className="small">参考回测收益</div>
+            <div className="kpi">{selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '-'}</div>
+          </div>
+          <div>
+            <div className="small">实时收益</div>
+            <div className="kpi">开发中</div>
+          </div>
+        </div>
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <details>
-          <summary>OKX 原始返回: /api/v5/account/positions</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawPositions}</pre>
-        </details>
-      </section>
-
-      <section className="card" style={{ marginTop: 16 }}>
-        <details>
-          <summary>OKX 原始返回: /api/v5/trade/orders-history-archive</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto', fontSize: 12 }}>{rawOrders}</pre>
-        </details>
+        <h2>实时数据接入预留</h2>
+        <div className="small">后续这里会显示实时品种数据、实时信号和动态收益曲线。</div>
       </section>
       </div>
     </main>
