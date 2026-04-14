@@ -387,10 +387,13 @@ export default function HomePage() {
   const chartTrades = backtestTradePoints.filter((t) => chartCandles.some((c) => c.ts === t.entryTs) || chartCandles.some((c) => c.ts === t.exitTs));
   const focusedTrade = focusedCandle ? chartTrades.find((t) => t.entryTs === focusedCandle.ts || t.exitTs === focusedCandle.ts) : null;
   const chartPriceTicks = chartCandles.length ? [maxPrice, minPrice + priceRange * 0.75, minPrice + priceRange * 0.5, minPrice + priceRange * 0.25, minPrice] : [];
-  const targetTickCount = chartWindow <= 20 ? 6 : chartWindow <= 60 ? 8 : 10;
-  const tickStep = chartCandles.length ? Math.max(1, Math.ceil((chartCandles.length - 1) / Math.max(targetTickCount - 1, 1))) : 1;
   const chartDateTicks = chartCandles.length
-    ? Array.from(new Set(Array.from({ length: chartCandles.length }, (_, index) => index).filter((index) => index === 0 || index === chartCandles.length - 1 || index % tickStep === 0)))
+    ? chartCandles.reduce<number[]>((acc, candle, index) => {
+        const dayKey = new Date(candle.ts).toLocaleDateString('zh-CN');
+        const prevKey = index > 0 ? new Date(chartCandles[index - 1].ts).toLocaleDateString('zh-CN') : null;
+        if (index === 0 || dayKey !== prevKey) acc.push(index);
+        return acc;
+      }, [])
     : [];
   const focusX = focusedCandleIndex != null ? xOf(focusedCandleIndex) : null;
   const candleRangeSeries = chartCandles.map((c) => ({
@@ -716,7 +719,8 @@ export default function HomePage() {
                 return (
                   <g key={`price-${tick}`}>
                     <line x1={chartPadLeft} y1={y} x2={chartWidth - chartPadRight} y2={y} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 6" />
-                    <text x={chartWidth - chartPadRight + 12} y={y + 4} textAnchor="start" fontSize="12" fill="rgba(159,176,208,0.88)">{formatNumber(tick, 6)}</text>
+                    <rect x={chartWidth - chartPadRight + 8} y={y - 10} width={72} height={20} rx={6} fill="rgba(10,18,29,0.96)" stroke="rgba(255,255,255,0.08)" />
+                    <text x={chartWidth - chartPadRight + 44} y={y + 4} textAnchor="middle" fontSize="12" fill="rgba(235,242,255,0.96)">{formatNumber(tick, 6)}</text>
                   </g>
                 );
               })}
@@ -728,8 +732,7 @@ export default function HomePage() {
                 return (
                   <g key={`date-${candle.ts}`}>
                     <line x1={x} y1={chartPadTop} x2={x} y2={chartHeight - chartPadBottom} stroke="rgba(255,255,255,0.05)" />
-                    <text x={x} y={chartHeight - 24} textAnchor="middle" fontSize="11" fill="rgba(159,176,208,0.8)">{tickDate.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>
-                    <text x={x} y={chartHeight - 10} textAnchor="middle" fontSize="11" fill="rgba(159,176,208,0.96)">{tickDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</text>
+                    <text x={x} y={chartHeight - 14} textAnchor="middle" fontSize="11" fill="rgba(235,242,255,0.96)">{tickDate.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>
                   </g>
                 );
               })}
@@ -823,7 +826,7 @@ export default function HomePage() {
                   if (!candle) return null;
                   const x = xOf(tickIndex);
                   const tickDate = new Date(candle.ts);
-                  return <text key={`mini-date-${candle.ts}`} x={x} y={132} textAnchor="middle" fontSize="11" fill="rgba(159,176,208,0.88)">{tickDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</text>;
+                  return <text key={`mini-date-${candle.ts}`} x={x} y={132} textAnchor="middle" fontSize="11" fill="rgba(159,176,208,0.88)">{tickDate.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>;
                 })}
               </svg>
             </div>
