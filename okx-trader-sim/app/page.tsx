@@ -497,6 +497,11 @@ export default function HomePage() {
           <div className="deployVersionTag">版本 2026-04-14 / 18:36 / v0.2</div>
           <h1 className="heroTitle">M狙击手操作界面</h1>
           <div className="small">用数据说话，以数据制定策略。</div>
+          <div className="modeSelectorRow" style={{ marginTop: 14 }}>
+            <button className={appMode === 'market' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('market')}>真实盘口</button>
+            <button className={appMode === 'backtest' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('backtest')}>策略回测</button>
+            <button className={appMode === 'realtime' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('realtime')}>实时策略</button>
+          </div>
         </div>
         <div className="card statusCard compactStatusCard">
           <div className="statusRow"><span className="small">策略状态</span><strong className={state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}>{loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}</strong></div>

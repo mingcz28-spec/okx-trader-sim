@@ -66,6 +66,27 @@ main {
 .statusCard {
   min-width: 280px;
 }
+.modeSelectorRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.modeSwitchBtn {
+  width: auto;
+  min-width: 140px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  border: 1px solid rgba(159,176,208,0.16);
+  box-shadow: none;
+}
+.modeSwitchBtn.active {
+  background: linear-gradient(180deg, #6ab2ff, #4995f1);
+  color: #04101f;
+  border-color: transparent;
+  box-shadow: 0 6px 18px rgba(90,169,255,0.22);
+}
 .mobileList {
   display: none;
 }
@@ -568,6 +589,13 @@ button:disabled {
   }
   .statusCard {
     min-width: 100%;
+  }
+  .modeSelectorRow {
+    flex-direction: column;
+  }
+  .modeSwitchBtn {
+    width: 100%;
+    min-width: 0;
   }
   .card {
     padding: 14px;
