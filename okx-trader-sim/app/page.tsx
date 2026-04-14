@@ -365,8 +365,11 @@ export default function HomePage() {
   const latestCandle = focusedCandle ?? chartCandles[chartCandles.length - 1];
   const latestChangePct = latestCandle ? ((latestCandle.close - latestCandle.open) / Math.max(latestCandle.open, 1e-9)) * 100 : 0;
   const chartWidth = 1180;
-  const chartHeight = 420;
-  const chartPad = 48;
+  const chartHeight = 460;
+  const chartPadLeft = 60;
+  const chartPadRight = 86;
+  const chartPadTop = 26;
+  const chartPadBottom = 46;
   const rawMinPrice = chartCandles.length ? Math.min(...chartCandles.map((c) => c.low)) : 0;
   const rawMaxPrice = chartCandles.length ? Math.max(...chartCandles.map((c) => c.high)) : 1;
   const rawPriceRange = Math.max(rawMaxPrice - rawMinPrice, 0.00000001);
@@ -375,10 +378,12 @@ export default function HomePage() {
   const minPrice = Math.max(0, paddedMinPrice);
   const maxPrice = paddedMaxPrice;
   const priceRange = Math.max(maxPrice - minPrice, 1e-9);
-  const candleGap = chartCandles.length ? (chartWidth - chartPad * 2) / chartCandles.length : 1;
+  const plotWidth = chartWidth - chartPadLeft - chartPadRight;
+  const plotHeight = chartHeight - chartPadTop - chartPadBottom;
+  const candleGap = chartCandles.length ? plotWidth / chartCandles.length : 1;
   const candleBodyWidth = Math.max(2, candleGap * 0.58);
-  const yOf = (price: number) => chartHeight - chartPad - ((price - minPrice) / priceRange) * (chartHeight - chartPad * 2);
-  const xOf = (index: number) => chartPad + index * candleGap + candleGap / 2;
+  const yOf = (price: number) => chartHeight - chartPadBottom - ((price - minPrice) / priceRange) * plotHeight;
+  const xOf = (index: number) => chartPadLeft + index * candleGap + candleGap / 2;
   const chartTrades = backtestTradePoints.filter((t) => chartCandles.some((c) => c.ts === t.entryTs) || chartCandles.some((c) => c.ts === t.exitTs));
   const focusedTrade = focusedCandle ? chartTrades.find((t) => t.entryTs === focusedCandle.ts || t.exitTs === focusedCandle.ts) : null;
   const chartPriceTicks = chartCandles.length ? [maxPrice, minPrice + priceRange * 0.75, minPrice + priceRange * 0.5, minPrice + priceRange * 0.25, minPrice] : [];
@@ -680,12 +685,13 @@ export default function HomePage() {
           <div className="chartWrap okxChartWrap" style={{ marginTop: 16 }}>
             <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="backtestChart" role="img" aria-label="Backtest candle chart">
               <rect x={0} y={0} width={chartWidth} height={chartHeight} fill="#0b1420" />
+              <rect x={chartPadLeft} y={chartPadTop} width={plotWidth} height={plotHeight} rx={8} fill="#0d1524" stroke="rgba(255,255,255,0.08)" />
               {chartPriceTicks.map((tick) => {
                 const y = yOf(tick);
                 return (
                   <g key={`price-${tick}`}>
-                    <line x1={chartPad} y1={y} x2={chartWidth - chartPad} y2={y} stroke="rgba(255,255,255,0.07)" strokeDasharray="3 6" />
-                    <text x={chartWidth - chartPad + 8} y={y + 4} textAnchor="start" fontSize="12" fill="rgba(159,176,208,0.88)">{formatNumber(tick, 6)}</text>
+                    <line x1={chartPadLeft} y1={y} x2={chartWidth - chartPadRight} y2={y} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 6" />
+                    <text x={chartWidth - chartPadRight + 12} y={y + 4} textAnchor="start" fontSize="12" fill="rgba(159,176,208,0.88)">{formatNumber(tick, 6)}</text>
                   </g>
                 );
               })}
@@ -695,13 +701,13 @@ export default function HomePage() {
                 const x = xOf(tickIndex);
                 return (
                   <g key={`date-${candle.ts}`}>
-                    <line x1={x} y1={chartPad} x2={x} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.05)" />
-                    <text x={x} y={chartHeight - chartPad + 22} textAnchor="middle" fontSize="12" fill="rgba(159,176,208,0.85)">{new Date(candle.ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>
+                    <line x1={x} y1={chartPadTop} x2={x} y2={chartHeight - chartPadBottom} stroke="rgba(255,255,255,0.05)" />
+                    <text x={x} y={chartHeight - 14} textAnchor="middle" fontSize="12" fill="rgba(159,176,208,0.88)">{new Date(candle.ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>
                   </g>
                 );
               })}
-              <line x1={chartPad} y1={chartPad} x2={chartPad} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.08)" />
-              <line x1={chartPad} y1={chartHeight - chartPad} x2={chartWidth - chartPad} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.08)" />
+              <line x1={chartPadLeft} y1={chartPadTop} x2={chartPadLeft} y2={chartHeight - chartPadBottom} stroke="rgba(255,255,255,0.08)" />
+              <line x1={chartPadLeft} y1={chartHeight - chartPadBottom} x2={chartWidth - chartPadRight} y2={chartHeight - chartPadBottom} stroke="rgba(255,255,255,0.08)" />
               {chartCandles.map((c, index) => {
                 const x = xOf(index);
                 const openY = yOf(c.open);
@@ -721,8 +727,8 @@ export default function HomePage() {
               })}
               {focusX != null ? (
                 <g>
-                  <line x1={focusX} y1={chartPad} x2={focusX} y2={chartHeight - chartPad} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 6" />
-                  {latestCandle ? <line x1={chartPad} y1={yOf(latestCandle.close)} x2={chartWidth - chartPad} y2={yOf(latestCandle.close)} stroke="rgba(45,140,255,0.2)" strokeDasharray="4 6" /> : null}
+                  <line x1={focusX} y1={chartPadTop} x2={focusX} y2={chartHeight - chartPadBottom} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 6" />
+                  {latestCandle ? <line x1={chartPadLeft} y1={yOf(latestCandle.close)} x2={chartWidth - chartPadRight} y2={yOf(latestCandle.close)} stroke="rgba(45,140,255,0.2)" strokeDasharray="4 6" /> : null}
                 </g>
               ) : null}
               {chartTrades.map((t, idx) => {
@@ -767,8 +773,9 @@ export default function HomePage() {
           <div className="miniIndicatorWrap">
             <div className="small">波动副图（按每根 K 线高低差）</div>
             <div className="chartWrap okxChartWrap miniWrap" style={{ marginTop: 8 }}>
-              <svg viewBox={`0 0 ${chartWidth} 120`} className="backtestChart" role="img" aria-label="Candle range sub chart">
-                <rect x={0} y={0} width={chartWidth} height={120} fill="#0b1420" />
+              <svg viewBox={`0 0 ${chartWidth} 140`} className="backtestChart" role="img" aria-label="Candle range sub chart">
+                <rect x={0} y={0} width={chartWidth} height={140} fill="#0b1420" />
+                <rect x={chartPadLeft} y={14} width={plotWidth} height={98} rx={8} fill="#0d1524" stroke="rgba(255,255,255,0.08)" />
                 {candleRangeSeries.map((c, index) => {
                   const x = xOf(index);
                   const h = Math.max((c.range / Math.max(maxCandleRange, 1e-9)) * 84, 2);
@@ -776,7 +783,13 @@ export default function HomePage() {
                   const isFocused = focusedCandleIndex === index;
                   return <rect key={`${c.ts}-range`} x={x - Math.max(candleBodyWidth / 2, 3)} y={y} width={Math.max(candleBodyWidth, 6)} height={h} fill={c.up ? '#00c087' : '#ff5b6e'} opacity={isFocused ? '1' : '0.72'} rx={1} onMouseEnter={() => setFocusedCandleIndex(index)} onClick={() => setFocusedCandleIndex(index)} />;
                 })}
-                {focusX != null ? <line x1={focusX} y1={8} x2={focusX} y2={104} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 6" /> : null}
+                {focusX != null ? <line x1={focusX} y1={14} x2={focusX} y2={112} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 6" /> : null}
+                {chartDateTicks.map((tickIndex) => {
+                  const candle = chartCandles[tickIndex];
+                  if (!candle) return null;
+                  const x = xOf(tickIndex);
+                  return <text key={`mini-date-${candle.ts}`} x={x} y={132} textAnchor="middle" fontSize="12" fill="rgba(159,176,208,0.88)">{new Date(candle.ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>;
+                })}
               </svg>
             </div>
           </div>

@@ -229,11 +229,12 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: #0b1524;
-  padding: 10px;
+  padding: 6px 6px 10px;
 }
 .okxChartWrap {
   background: linear-gradient(180deg, #0b1420 0%, #0a121d 100%);
   border-color: rgba(255,255,255,0.06);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
 }
 .chartToolbar {
   display: flex;
@@ -354,8 +355,8 @@ button:disabled {
   margin-top: 12px;
 }
 .miniWrap {
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 .backtestChart {
   width: 1180px;
