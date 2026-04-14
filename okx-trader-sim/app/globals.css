@@ -354,6 +354,15 @@ button:disabled {
 .ghostBtn {
   opacity: 0.62;
 }
+.disabledPeriodBtn {
+  opacity: 0.38;
+  cursor: not-allowed;
+  color: rgba(159,176,208,0.58);
+}
+.disabledPeriodBtn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
 .dualControls {
   min-width: 320px;
   display: grid;

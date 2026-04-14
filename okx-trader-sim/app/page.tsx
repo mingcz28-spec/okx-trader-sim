@@ -674,13 +674,13 @@ export default function HomePage() {
         <div className="chartToolbar okxToolbar" style={{ marginTop: 12 }}>
           <div className="chartLegend okxLegendRow okxIntervalRow">
             <span className="intervalLabel">时间间隔</span>
-            <button className="periodBtn ghostBtn">1m</button>
-            <button className="periodBtn ghostBtn">5m</button>
-            <button className="periodBtn ghostBtn">15m</button>
-            <button className="periodBtn active">1H</button>
-            <button className="periodBtn ghostBtn">4H</button>
-            <button className="periodBtn ghostBtn">1D</button>
-            <span className="intervalHint">当前后端回测数据为 1H</span>
+            <button className="periodBtn disabledPeriodBtn" disabled>1m</button>
+            <button className="periodBtn disabledPeriodBtn" disabled>5m</button>
+            <button className="periodBtn disabledPeriodBtn" disabled>15m</button>
+            <button className="periodBtn active" disabled>1H</button>
+            <button className="periodBtn disabledPeriodBtn" disabled>4H</button>
+            <button className="periodBtn disabledPeriodBtn" disabled>1D</button>
+            <span className="intervalHint">当前仅接入 1H 数据，其他周期暂未接入</span>
           </div>
           <div className="chartControls dualControls">
             <div>
