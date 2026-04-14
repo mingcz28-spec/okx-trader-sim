@@ -204,6 +204,16 @@ button:disabled {
   background: rgba(90,169,255,0.14);
   color: #9fd0ff;
 }
+.deployVersionTag {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(53,208,127,0.12);
+  color: #8ff0b8;
+}
 .warn {
   border-left: 4px solid #f5b942;
   padding-left: 12px;

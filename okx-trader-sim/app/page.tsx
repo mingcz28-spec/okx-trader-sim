@@ -494,6 +494,7 @@ export default function HomePage() {
       <div className="hero okxHero">
         <div>
           <div className="badge">M狙击手</div>
+          <div className="deployVersionTag">版本 2026-04-14 / 18:36 / v0.2</div>
           <h1 className="heroTitle">M狙击手操作界面</h1>
           <div className="small">用数据说话，以数据制定策略。</div>
         </div>
