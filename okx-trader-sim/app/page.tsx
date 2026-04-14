@@ -550,7 +550,7 @@ export default function HomePage() {
           <div className="small" style={{ marginTop: 12 }}>规则说明: 跌破买入价 {strategyForm.stopLossPct}% 卖出，或从买入后最高价回撤 {strategyForm.trailingDrawdownPct}% 卖出。</div>
           <div className="row" style={{ marginTop: 12 }}>
             <button onClick={saveStrategyConfig}>保存策略</button>
-            <button className="secondary" onClick={runBacktest}>{backtesting ? '回测中...' : '回测 RAVE 策略'}</button>
+            <button className="secondary" onClick={() => runBacktest()}>{backtesting ? '回测中...' : '回测 RAVE 策略'}</button>
           </div>
         </section>
 
@@ -891,7 +891,7 @@ export default function HomePage() {
           <div className="small"><span className="metaLabel">最大回撤</span>{selectedBacktest ? `${formatNumber(selectedBacktest.maxDrawdown * 100, 2)}%` : '-'}</div>
         </div>
         <div className="chartActionRow">
-          <button className="secondary" onClick={runBacktest} disabled={backtesting}>{backtesting ? '回测中...' : '重新运行回测'}</button>
+          <button className="secondary" onClick={() => runBacktest()} disabled={backtesting}>{backtesting ? '回测中...' : '重新运行回测'}</button>
           <button className="secondary" onClick={() => backtestResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看参数结果</button>
         </div>
         {selectedTrade ? (
