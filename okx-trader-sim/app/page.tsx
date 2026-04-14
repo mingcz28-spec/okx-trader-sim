@@ -665,20 +665,33 @@ export default function HomePage() {
           </div>
         ) : null}
         <div className="chartToolbar okxToolbar" style={{ marginTop: 12 }}>
-          <div className="chartLegend okxLegendRow">
-            <button className={chartWindow === 20 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(20)}>1D</button>
-            <button className={chartWindow === 60 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(60)}>1W</button>
-            <button className={chartWindow === 120 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(120)}>1M</button>
-            <span><i className="legendDot buy"></i>买点</span>
-            <span><i className="legendDot sell"></i>卖点</span>
+          <div className="chartLegend okxLegendRow okxIntervalRow">
+            <span className="intervalLabel">时间间隔</span>
+            <button className="periodBtn ghostBtn">1m</button>
+            <button className="periodBtn ghostBtn">5m</button>
+            <button className="periodBtn ghostBtn">15m</button>
+            <button className="periodBtn active">1H</button>
+            <button className="periodBtn ghostBtn">4H</button>
+            <button className="periodBtn ghostBtn">1D</button>
+            <span className="intervalHint">当前后端回测数据为 1H</span>
           </div>
-          <div className="chartControls">
-            <label>K 线窗口</label>
-            <select value={String(chartWindow)} onChange={(e) => setChartWindow(Number(e.target.value) as 20 | 60 | 120)}>
-              <option value="20">最近 20 根</option>
-              <option value="60">最近 60 根</option>
-              <option value="120">最近 120 根</option>
-            </select>
+          <div className="chartControls dualControls">
+            <div>
+              <label>观察区间</label>
+              <div className="windowQuickRow">
+                <button className={chartWindow === 20 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(20)}>最近 20 根</button>
+                <button className={chartWindow === 60 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(60)}>最近 60 根</button>
+                <button className={chartWindow === 120 ? 'periodBtn active' : 'periodBtn'} onClick={() => setChartWindow(120)}>最近 120 根</button>
+              </div>
+            </div>
+            <div>
+              <label>K 线窗口</label>
+              <select value={String(chartWindow)} onChange={(e) => setChartWindow(Number(e.target.value) as 20 | 60 | 120)}>
+                <option value="20">最近 20 根</option>
+                <option value="60">最近 60 根</option>
+                <option value="120">最近 120 根</option>
+              </select>
+            </div>
           </div>
         </div>
         {chartCandles.length ? (

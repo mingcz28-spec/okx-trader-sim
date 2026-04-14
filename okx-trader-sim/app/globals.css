@@ -296,6 +296,34 @@ button:disabled {
   gap: 10px;
   align-items: center;
 }
+.okxIntervalRow {
+  row-gap: 8px;
+}
+.intervalLabel {
+  color: rgba(159,176,208,0.76);
+  font-size: 12px;
+}
+.intervalHint {
+  color: rgba(159,176,208,0.68);
+  font-size: 12px;
+}
+.ghostBtn {
+  opacity: 0.62;
+}
+.dualControls {
+  min-width: 320px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.windowQuickRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.windowQuickRow .periodBtn {
+  width: auto;
+}
 .chartControls {
   min-width: 180px;
 }
@@ -583,6 +611,15 @@ button:disabled {
   .chartToolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+  .dualControls {
+    min-width: 100%;
+  }
+  .windowQuickRow {
+    flex-direction: column;
+  }
+  .windowQuickRow .periodBtn {
+    width: 100%;
   }
   .chartControls {
     min-width: 100%;
