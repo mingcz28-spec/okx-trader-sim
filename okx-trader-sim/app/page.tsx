@@ -64,6 +64,8 @@ type BacktestTradePoint = {
   reason: 'stop_loss' | 'trailing_exit';
 };
 
+type BacktestBar = '1m' | '5m' | '15m' | '1H' | '4H' | '1D';
+
 type SimState = {
   apiConfig: {
     apiKey: string;
@@ -145,6 +147,7 @@ export default function HomePage() {
   const [backtestSort, setBacktestSort] = useState<'return' | 'drawdown' | 'winRate'>('return');
   const [backtestChartCandles, setBacktestChartCandles] = useState<BacktestCandle[]>([]);
   const [backtestTradePoints, setBacktestTradePoints] = useState<BacktestTradePoint[]>([]);
+  const [backtestBar, setBacktestBar] = useState<BacktestBar>('1H');
   const [chartWindow, setChartWindow] = useState<20 | 60 | 120>(20);
   const [mobileTab, setMobileTab] = useState<'backtest' | 'account' | 'raw'>('backtest');
   const [selectedTrade, setSelectedTrade] = useState<BacktestTradePoint | null>(null);
@@ -165,6 +168,7 @@ export default function HomePage() {
     setBacktestCandles(data.backtest?.candles ?? 0);
     setBacktestChartCandles(data.backtest?.chartCandles ?? []);
     setBacktestTradePoints(data.backtest?.tradePoints ?? []);
+    setBacktestBar((data.backtest?.bar as BacktestBar) ?? '1H');
     setSelectedBacktestKey(data.backtest?.selected ? `${data.backtest.selected.stopLossPct}-${data.backtest.selected.trailingDrawdownPct}` : '');
     setLoading(false);
   }
@@ -234,7 +238,7 @@ export default function HomePage() {
     setMessage('风控参数已更新。');
   }
 
-  async function runBacktest() {
+  async function runBacktest(bar: BacktestBar = backtestBar) {
     setBacktesting(true);
     setError('');
     setMessage('正在回测 RAVE 策略，请稍等...');
@@ -243,7 +247,7 @@ export default function HomePage() {
       const res = await fetch('/api/backtest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instId: 'RAVE-USDT-SWAP' }),
+        body: JSON.stringify({ instId: 'RAVE-USDT-SWAP', bar }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -257,10 +261,12 @@ export default function HomePage() {
       setShowBacktestResults(true);
       setSelectedBacktestKey(top[0] ? `${top[0].stopLossPct}-${top[0].trailingDrawdownPct}` : '');
       if (top[0]) {
-        await loadBacktestDetail(top[0].stopLossPct, top[0].trailingDrawdownPct);
-        setMessage(`回测完成，共 ${data.results?.length || top.length || 0} 组结果，已自动选中 ${top[0].stopLossPct}% / ${top[0].trailingDrawdownPct}%。`);
+        await loadBacktestDetail(top[0].stopLossPct, top[0].trailingDrawdownPct, (data.bar as BacktestBar) || bar);
+        setBacktestBar((data.bar as BacktestBar) || bar);
+        setMessage(`回测完成，共 ${data.results?.length || top.length || 0} 组结果，已自动选中 ${top[0].stopLossPct}% / ${top[0].trailingDrawdownPct}%，周期 ${(data.bar as BacktestBar) || bar}。`);
       } else {
-        setMessage(`回测完成，但暂时没有可用结果。样本 ${data.candles} 根 1H K 线。`);
+        setBacktestBar((data.bar as BacktestBar) || bar);
+        setMessage(`回测完成，但暂时没有可用结果。样本 ${data.candles} 根 ${(data.bar as BacktestBar) || bar} K 线。`);
       }
       setTimeout(() => {
         backtestResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -270,7 +276,7 @@ export default function HomePage() {
     }
   }
 
-  async function loadBacktestDetail(stopLossPct: number, trailingDrawdownPct: number) {
+  async function loadBacktestDetail(stopLossPct: number, trailingDrawdownPct: number, bar: BacktestBar = backtestBar) {
     const res = await fetch('/api/backtest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -279,6 +285,7 @@ export default function HomePage() {
         instId: 'RAVE-USDT-SWAP',
         stopLossPct,
         trailingDrawdownPct,
+        bar,
       }),
     });
     const data = await res.json();
@@ -288,6 +295,7 @@ export default function HomePage() {
     }
     setBacktestChartCandles(data.candles || []);
     setBacktestTradePoints(data.tradePoints || []);
+    setBacktestBar((data.bar as BacktestBar) || bar);
   }
 
   function applyBacktestParams(result: BacktestResult) {
@@ -300,10 +308,51 @@ export default function HomePage() {
     setMessage(`已切换到 ${result.stopLossPct}% / ${result.trailingDrawdownPct}%，图表和交易明细正在更新。`);
     setMobileTab('backtest');
     setShowBacktestResults(true);
-    loadBacktestDetail(result.stopLossPct, result.trailingDrawdownPct);
+    loadBacktestDetail(result.stopLossPct, result.trailingDrawdownPct, backtestBar);
     setTimeout(() => {
       backtestResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
+  }
+
+  async function changeBacktestBar(nextBar: BacktestBar) {
+    if (nextBar === backtestBar || backtesting) return;
+    setBacktestBar(nextBar);
+    setMessage(`正在切换到 ${nextBar} 周期并重新回测...`);
+    if (selectedBacktest) {
+      setBacktesting(true);
+      setError('');
+      try {
+        const gridRes = await fetch('/api/backtest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instId: 'RAVE-USDT-SWAP', bar: nextBar }),
+        });
+        const gridData = await gridRes.json();
+        if (!gridRes.ok || !gridData.ok) {
+          setError(gridData.message || '切换周期失败');
+          return;
+        }
+        const results = gridData.results || [];
+        const top = gridData.top || [];
+        setBacktestResults(results);
+        setBacktestTop(top);
+        setBacktestCandles(Number(gridData.candles || 0));
+        const matched = results.find((r: BacktestResult) => r.stopLossPct === selectedBacktest.stopLossPct && r.trailingDrawdownPct === selectedBacktest.trailingDrawdownPct) || top[0];
+        if (matched) {
+          setSelectedBacktestKey(`${matched.stopLossPct}-${matched.trailingDrawdownPct}`);
+          await loadBacktestDetail(matched.stopLossPct, matched.trailingDrawdownPct, nextBar);
+        } else {
+          setBacktestChartCandles([]);
+          setBacktestTradePoints([]);
+          setSelectedBacktestKey('');
+        }
+        setMessage(`已切换到 ${nextBar} 周期。`);
+      } finally {
+        setBacktesting(false);
+      }
+      return;
+    }
+    await runBacktest(nextBar);
   }
 
   async function saveStrategyConfig() {
@@ -674,13 +723,13 @@ export default function HomePage() {
         <div className="chartToolbar okxToolbar" style={{ marginTop: 12 }}>
           <div className="chartLegend okxLegendRow okxIntervalRow">
             <span className="intervalLabel">时间间隔</span>
-            <button className="periodBtn disabledPeriodBtn" disabled>1m</button>
-            <button className="periodBtn disabledPeriodBtn" disabled>5m</button>
-            <button className="periodBtn disabledPeriodBtn" disabled>15m</button>
-            <button className="periodBtn active" disabled>1H</button>
-            <button className="periodBtn disabledPeriodBtn" disabled>4H</button>
-            <button className="periodBtn disabledPeriodBtn" disabled>1D</button>
-            <span className="intervalHint">当前仅接入 1H 数据，其他周期暂未接入</span>
+            <button className={backtestBar === '1m' ? 'periodBtn active' : 'periodBtn'} onClick={() => changeBacktestBar('1m')} disabled={backtesting}>1m</button>
+            <button className={backtestBar === '5m' ? 'periodBtn active' : 'periodBtn'} onClick={() => changeBacktestBar('5m')} disabled={backtesting}>5m</button>
+            <button className={backtestBar === '15m' ? 'periodBtn active' : 'periodBtn'} onClick={() => changeBacktestBar('15m')} disabled={backtesting}>15m</button>
+            <button className={backtestBar === '1H' ? 'periodBtn active' : 'periodBtn'} onClick={() => changeBacktestBar('1H')} disabled={backtesting}>1H</button>
+            <button className={backtestBar === '4H' ? 'periodBtn active' : 'periodBtn'} onClick={() => changeBacktestBar('4H')} disabled={backtesting}>4H</button>
+            <button className={backtestBar === '1D' ? 'periodBtn active' : 'periodBtn'} onClick={() => changeBacktestBar('1D')} disabled={backtesting}>1D</button>
+            <span className="intervalHint">当前周期 {backtestBar}，点击会重新拉取并回测</span>
           </div>
           <div className="chartControls dualControls">
             <div>

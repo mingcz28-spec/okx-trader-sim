@@ -44,7 +44,9 @@ async function fetchCandles(instId: string, bar: string, limit: number, after?: 
   return json.data as string[][];
 }
 
-async function loadSeries(instId: string, bar = '1H', limit = 100, pages = 10) {
+export type SupportedBar = '1m' | '5m' | '15m' | '1H' | '4H' | '1D';
+
+async function loadSeries(instId: string, bar: SupportedBar = '1H', limit = 100, pages = 10) {
   let after: string | undefined;
   const rows: string[][] = [];
   for (let i = 0; i < pages; i++) {
@@ -126,8 +128,8 @@ function runStrategy(candles: CandlePoint[], stopLossPct: number, trailingDrawdo
   };
 }
 
-export async function backtestGrid(instId = 'RAVE-USDT-SWAP') {
-  const candles = await loadSeries(instId);
+export async function backtestGrid(instId = 'RAVE-USDT-SWAP', bar: SupportedBar = '1H') {
+  const candles = await loadSeries(instId, bar);
   const results: BacktestResult[] = [];
   for (const stop of [0.5, 0.8, 1, 1.2, 1.5, 2]) {
     for (const trail of [1, 1.5, 2, 2.5, 3, 4]) {
@@ -135,15 +137,15 @@ export async function backtestGrid(instId = 'RAVE-USDT-SWAP') {
     }
   }
   results.sort((a, b) => b.totalReturn - a.totalReturn || b.winRate - a.winRate);
-  return { instId, bar: '1H', candles: candles.length, top: results.slice(0, 12), results };
+  return { instId, bar, candles: candles.length, top: results.slice(0, 12), results };
 }
 
-export async function backtestDetail(instId = 'RAVE-USDT-SWAP', stopLossPct = 1, trailingDrawdownPct = 2) {
-  const candles = await loadSeries(instId);
+export async function backtestDetail(instId = 'RAVE-USDT-SWAP', stopLossPct = 1, trailingDrawdownPct = 2, bar: SupportedBar = '1H') {
+  const candles = await loadSeries(instId, bar);
   const detail = runStrategy(candles, stopLossPct, trailingDrawdownPct);
   return {
     instId,
-    bar: '1H',
+    bar,
     candles: detail.candles,
     tradePoints: detail.tradePoints,
     summary: {
