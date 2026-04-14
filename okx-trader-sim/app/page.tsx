@@ -387,7 +387,11 @@ export default function HomePage() {
   const chartTrades = backtestTradePoints.filter((t) => chartCandles.some((c) => c.ts === t.entryTs) || chartCandles.some((c) => c.ts === t.exitTs));
   const focusedTrade = focusedCandle ? chartTrades.find((t) => t.entryTs === focusedCandle.ts || t.exitTs === focusedCandle.ts) : null;
   const chartPriceTicks = chartCandles.length ? [maxPrice, minPrice + priceRange * 0.75, minPrice + priceRange * 0.5, minPrice + priceRange * 0.25, minPrice] : [];
-  const chartDateTicks = chartCandles.length ? [0, Math.floor((chartCandles.length - 1) / 2), chartCandles.length - 1] : [];
+  const targetTickCount = chartWindow <= 20 ? 6 : chartWindow <= 60 ? 8 : 10;
+  const tickStep = chartCandles.length ? Math.max(1, Math.ceil((chartCandles.length - 1) / Math.max(targetTickCount - 1, 1))) : 1;
+  const chartDateTicks = chartCandles.length
+    ? Array.from(new Set(Array.from({ length: chartCandles.length }, (_, index) => index).filter((index) => index === 0 || index === chartCandles.length - 1 || index % tickStep === 0)))
+    : [];
   const focusX = focusedCandleIndex != null ? xOf(focusedCandleIndex) : null;
   const candleRangeSeries = chartCandles.map((c) => ({
     ts: c.ts,
@@ -712,10 +716,12 @@ export default function HomePage() {
                 const candle = chartCandles[tickIndex];
                 if (!candle) return null;
                 const x = xOf(tickIndex);
+                const tickDate = new Date(candle.ts);
                 return (
                   <g key={`date-${candle.ts}`}>
                     <line x1={x} y1={chartPadTop} x2={x} y2={chartHeight - chartPadBottom} stroke="rgba(255,255,255,0.05)" />
-                    <text x={x} y={chartHeight - 14} textAnchor="middle" fontSize="12" fill="rgba(159,176,208,0.88)">{new Date(candle.ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>
+                    <text x={x} y={chartHeight - 24} textAnchor="middle" fontSize="11" fill="rgba(159,176,208,0.8)">{tickDate.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>
+                    <text x={x} y={chartHeight - 10} textAnchor="middle" fontSize="11" fill="rgba(159,176,208,0.96)">{tickDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</text>
                   </g>
                 );
               })}
@@ -801,7 +807,8 @@ export default function HomePage() {
                   const candle = chartCandles[tickIndex];
                   if (!candle) return null;
                   const x = xOf(tickIndex);
-                  return <text key={`mini-date-${candle.ts}`} x={x} y={132} textAnchor="middle" fontSize="12" fill="rgba(159,176,208,0.88)">{new Date(candle.ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</text>;
+                  const tickDate = new Date(candle.ts);
+                  return <text key={`mini-date-${candle.ts}`} x={x} y={132} textAnchor="middle" fontSize="11" fill="rgba(159,176,208,0.88)">{tickDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</text>;
                 })}
               </svg>
             </div>
