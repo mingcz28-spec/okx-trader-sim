@@ -533,7 +533,13 @@ export default function HomePage() {
         <button className={appMode === 'realtime' ? 'mobileTab active' : 'mobileTab'} onClick={() => setAppMode('realtime')}>实时策略</button>
       </nav>
 
-      <div className="grid mobileSection" data-tab="account" data-active={appMode === 'market'}>
+      <div className="mobileSection" data-tab="account" data-active={appMode === 'market'}>
+        <section className="card pageModeIntroCard" style={{ marginTop: 16 }}>
+          <div className="sectionTag">真实盘口</div>
+          <h2 style={{ marginTop: 0 }}>真实盘口操作界面</h2>
+          <div className="small">只看账户资金、持仓、委托和连接状态，不混入回测结果。</div>
+        </section>
+        <div className="grid modePageGrid" style={{ marginTop: 16 }}>
         <section className="card panelCard">
           <div className="panelHeader"><div><div className="sectionTag">连接</div><h2>账户连接</h2></div></div>
           <label>API Key</label>
@@ -575,30 +581,29 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="card panelCard">
+        <section className="card panelCard marketOverviewCard">
           <div className="panelHeader"><div><div className="sectionTag">账户概览</div><h2>账户核心数据</h2></div></div>
           <div className="small">这些数值直接来自交易所返回结果，不做额外换算。</div>
-          <div className="row" style={{ marginTop: 16 }}>
-            <div>
-              <div className="small">totalEq</div>
-              <div className="kpi">{balanceTop?.totalEq ?? '-'}</div>
+          <div className="modeHeroStats" style={{ marginTop: 16 }}>
+            <div className="heroStatBox">
+              <span>账户权益</span>
+              <strong>{balanceTop?.totalEq ?? '-'}</strong>
             </div>
-            <div>
-              <div className="small">adjEq</div>
-              <div className="kpi">{balanceTop?.adjEq ?? '-'}</div>
+            <div className="heroStatBox">
+              <span>调整后权益</span>
+              <strong>{balanceTop?.adjEq ?? '-'}</strong>
             </div>
-          </div>
-          <div className="row" style={{ marginTop: 16 }}>
-            <div>
-              <div className="small">可用余额</div>
-              <div className="kpi">{formatNumber(state.availableMargin, 8)}</div>
+            <div className="heroStatBox">
+              <span>可用余额</span>
+              <strong>{formatNumber(state.availableMargin, 8)}</strong>
             </div>
-            <div>
-              <div className="small">资产项数量</div>
-              <div className="kpi">{balanceTop?.details?.length ?? 0}</div>
+            <div className="heroStatBox">
+              <span>资产项数量</span>
+              <strong>{balanceTop?.details?.length ?? 0}</strong>
             </div>
           </div>
         </section>
+        </div>
       </div>
 
       <div className="mobileSection" data-tab="backtest" data-active={appMode === 'backtest'}>
@@ -1167,35 +1172,59 @@ export default function HomePage() {
       </div>
 
       <div className="mobileSection" data-tab="realtime" data-active={appMode === 'realtime'}>
-      <section className="card panelCard" style={{ marginTop: 16 }}>
+      <section className="card pageModeIntroCard" style={{ marginTop: 16 }}>
+        <div className="sectionTag">实时策略</div>
+        <h2 style={{ marginTop: 0 }}>实时策略操作界面</h2>
+        <div className="small">选择回测里验证过的参数，进入实时执行和收益跟踪。</div>
+      </section>
+      <section className="card panelCard realtimeHeroCard" style={{ marginTop: 16 }}>
         <div className="panelHeader"><div><div className="sectionTag">实时策略</div><h2>实时策略总览</h2></div></div>
-        <div className="small">选择策略回测中的策略后，这里会接入实时数据并持续显示策略收益情况。</div>
-        <div className="row" style={{ marginTop: 16 }}>
-          <div>
-            <div className="small">当前策略</div>
-            <div className="kpi">买入 / 卖出</div>
+        <div className="modeHeroStats">
+          <div className="heroStatBox">
+            <span>当前策略</span>
+            <strong>买入 / 卖出</strong>
           </div>
-          <div>
-            <div className="small">最佳参数</div>
-            <div className="kpi">{selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</div>
+          <div className="heroStatBox">
+            <span>最佳参数</span>
+            <strong>{selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</strong>
           </div>
-        </div>
-        <div className="row" style={{ marginTop: 16 }}>
-          <div>
-            <div className="small">参考回测收益</div>
-            <div className="kpi">{selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '-'}</div>
+          <div className="heroStatBox">
+            <span>参考回测收益</span>
+            <strong>{selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '-'}</strong>
           </div>
-          <div>
-            <div className="small">实时收益</div>
-            <div className="kpi">开发中</div>
+          <div className="heroStatBox">
+            <span>实时收益</span>
+            <strong>开发中</strong>
           </div>
         </div>
       </section>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>实时数据接入预留</h2>
-        <div className="small">后续这里会显示实时品种数据、实时信号和动态收益曲线。</div>
+      <div className="grid modePageGrid" style={{ marginTop: 16 }}>
+      <section className="card panelCard">
+        <div className="panelHeader"><div><div className="sectionTag">执行状态</div><h2>策略执行状态</h2></div></div>
+        <div className="small">这里后续会显示实时开关、运行状态、最后一次触发信号和执行结果。</div>
+        <div className="statusList" style={{ marginTop: 16 }}>
+          <div className="statusRow"><span className="small">运行状态</span><strong>{state.strategyStatus === 'running' ? '运行中' : state.strategyStatus === 'paused' ? '已暂停' : '已待命'}</strong></div>
+          <div className="statusRow"><span className="small">最后信号</span><strong>{strategyForm.lastSignal === 'buy' ? '买入' : strategyForm.lastSignal === 'sell' ? '卖出' : '观望'}</strong></div>
+          <div className="statusRow"><span className="small">当前参数</span><strong>{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</strong></div>
+        </div>
       </section>
+
+      <section className="card panelCard">
+        <div className="panelHeader"><div><div className="sectionTag">收益跟踪</div><h2>实时收益监控</h2></div></div>
+        <div className="small">这里后续会接实时收益曲线、浮盈浮亏和策略净值走势。</div>
+        <div className="modeHeroStats" style={{ marginTop: 16 }}>
+          <div className="heroStatBox">
+            <span>今日收益</span>
+            <strong>{formatNumber(state.dailyPnl, 4)}</strong>
+          </div>
+          <div className="heroStatBox">
+            <span>当前回撤</span>
+            <strong>{formatNumber(state.drawdownPct, 2)}%</strong>
+          </div>
+        </div>
+      </section>
+      </div>
       </div>
     </main>
   );
