@@ -180,6 +180,15 @@ summary {
   font-size: 24px;
   line-height: 1.2;
 }
+.backtestControlHero {
+  border-color: rgba(90,169,255,0.24);
+}
+.subPanelCard {
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(159,176,208,0.1);
+}
 .accentPanel {
   border-color: rgba(90,169,255,0.28);
   box-shadow: 0 14px 34px rgba(0,0,0,0.28), 0 0 0 1px rgba(90,169,255,0.08) inset;

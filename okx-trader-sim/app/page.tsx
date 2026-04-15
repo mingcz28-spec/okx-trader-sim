@@ -607,6 +607,74 @@ export default function HomePage() {
       </div>
 
       <div className="mobileSection" data-tab="backtest" data-active={appMode === 'backtest'}>
+      <section className="card pageModeIntroCard" style={{ marginTop: 16 }}>
+        <div className="sectionTag">策略回测</div>
+        <h2 style={{ marginTop: 0 }}>策略回测主界面</h2>
+        <div className="small">先定策略，再调参数，再跑回测，用结果决定是否进入实时策略。</div>
+      </section>
+
+      <section className="card panelCard backtestControlHero" style={{ marginTop: 16 }}>
+        <div className="panelHeader"><div><div className="sectionTag">策略控制</div><h2>回测参数与执行控制</h2></div></div>
+        <div className="modeHeroStats">
+          <div className="heroStatBox">
+            <span>策略类型</span>
+            <strong>买入 / 卖出</strong>
+          </div>
+          <div className="heroStatBox">
+            <span>当前参数</span>
+            <strong>{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</strong>
+          </div>
+          <div className="heroStatBox">
+            <span>较优组合</span>
+            <strong>{bestBacktest ? `${bestBacktest.stopLossPct}% / ${bestBacktest.trailingDrawdownPct}%` : '-'}</strong>
+          </div>
+          <div className="heroStatBox">
+            <span>样本数量</span>
+            <strong>{backtestCandles || 0}</strong>
+          </div>
+        </div>
+        <div className="grid modePageGrid" style={{ marginTop: 16 }}>
+          <section className="subPanelCard">
+            <div className="small">策略参数</div>
+            <label style={{ marginTop: 12 }}>止损比例 (%)</label>
+            <input value={strategyForm.stopLossPct} onChange={(e) => setStrategyForm({ ...strategyForm, stopLossPct: Number(e.target.value) })} />
+            <label style={{ marginTop: 12 }}>回撤卖出比例 (%)</label>
+            <input value={strategyForm.trailingDrawdownPct} onChange={(e) => setStrategyForm({ ...strategyForm, trailingDrawdownPct: Number(e.target.value) })} />
+            <label style={{ marginTop: 12 }}>策略开关</label>
+            <select value={strategyForm.enabled ? 'on' : 'off'} onChange={(e) => setStrategyForm({ ...strategyForm, enabled: e.target.value === 'on' })}>
+              <option value="off">关闭</option>
+              <option value="on">开启</option>
+            </select>
+            <button style={{ marginTop: 12 }} onClick={saveStrategyConfig}>保存策略参数</button>
+          </section>
+          <section className="subPanelCard">
+            <div className="small">风控约束</div>
+            <label style={{ marginTop: 12 }}>单次最大仓位 (%)</label>
+            <input value={riskForm.maxPositionPct} onChange={(e) => setRiskForm({ ...riskForm, maxPositionPct: Number(e.target.value) })} />
+            <label style={{ marginTop: 12 }}>单日最大亏损 (%)</label>
+            <input value={riskForm.maxDailyLossPct} onChange={(e) => setRiskForm({ ...riskForm, maxDailyLossPct: Number(e.target.value) })} />
+            <label style={{ marginTop: 12 }}>最大连续亏损次数</label>
+            <input value={riskForm.maxConsecutiveLosses} onChange={(e) => setRiskForm({ ...riskForm, maxConsecutiveLosses: Number(e.target.value) })} />
+            <button className="secondary" style={{ marginTop: 12 }} onClick={saveRiskConfig}>保存风控参数</button>
+          </section>
+          <section className="subPanelCard">
+            <div className="small">回测操作</div>
+            <label style={{ marginTop: 12 }}>周期</label>
+            <select value={backtestBar} onChange={(e) => setBacktestBar(e.target.value as BacktestBar)}>
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="1H">1H</option>
+              <option value="4H">4H</option>
+              <option value="1D">1D</option>
+            </select>
+            <div className="small" style={{ marginTop: 12 }}>当前只接入买入 / 卖出策略，后续可扩展更多策略种类。</div>
+            <button style={{ marginTop: 12 }} onClick={() => runBacktest()} disabled={backtesting}>{backtesting ? '回测中...' : '运行策略回测'}</button>
+            <button className="secondary" style={{ marginTop: 12 }} onClick={() => bestBacktest && applyBacktestParams(bestBacktest)} disabled={!bestBacktest}>采用较优组合</button>
+          </section>
+        </div>
+      </section>
+
       <section className="card mobileSummaryBar backtestSummarySection" style={{ marginTop: 16 }}>
         <div className="mobileSummaryGrid">
           <div>
