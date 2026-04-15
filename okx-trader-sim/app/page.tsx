@@ -495,7 +495,7 @@ export default function HomePage() {
       <div className="hero okxHero">
         <div>
           <div className="badge">M狙击手</div>
-          <div className="deployVersionTag">版本 2026-04-14 / 22:45 / v0.3.2</div>
+          <div className="deployVersionTag">版本 2026-04-14 / 23:01 / v0.3.3</div>
           <h1 className="heroTitle">M狙击手操作界面</h1>
           <div className="small">用数据说话，以数据制定策略。</div>
           <div className="modeOverviewStrip" style={{ marginTop: 14 }}>
@@ -530,12 +530,16 @@ export default function HomePage() {
           <div>
             <div className="sectionTag">更新日志</div>
             <h2 style={{ margin: 0 }}>版本记录</h2>
-            <div className="small">当前版本 v0.3.2，可随时查看最近迭代内容。</div>
+            <div className="small">当前版本 v0.3.3，可随时查看最近迭代内容。</div>
           </div>
           <button className="secondary collapseBtn" onClick={() => setShowChangelog((v) => !v)}>{showChangelog ? '收起日志' : '展开日志'}</button>
         </div>
         {showChangelog ? (
           <div className="changelogList" style={{ marginTop: 16 }}>
+            <div className="changelogItem">
+              <strong>v0.3.3 - 2026-04-14 23:01</strong>
+              <div className="small">实时策略页升级为独立执行界面骨架，新增执行总览、实时信号、执行日志三块区域。</div>
+            </div>
             <div className="changelogItem">
               <strong>v0.3.2 - 2026-04-14 22:45</strong>
               <div className="small">页面内新增可展开更新日志面板，方便直接查看迭代记录。</div>
@@ -1280,15 +1284,70 @@ export default function HomePage() {
       <div className="mobileSection" data-tab="realtime" data-active={appMode === 'realtime'}>
       <section className="card pageModeIntroCard" style={{ marginTop: 16 }}>
         <div className="sectionTag">实时策略</div>
-        <h2 style={{ marginTop: 0 }}>实时策略页面待设计</h2>
-        <div className="small">这里不沿用回测页内容。等你定好实时策略页面结构后，再单独开发新的执行界面。</div>
+        <h2 style={{ marginTop: 0 }}>实时策略执行界面</h2>
+        <div className="small">这里单独承载实时信号、执行控制、实时收益、当前持仓、日志与异常状态，不和真实盘口、策略回测混排。</div>
       </section>
 
-      <section className="card panelCard" style={{ marginTop: 16 }}>
-        <div className="panelHeader"><div><div className="sectionTag">开发说明</div><h2>实时策略页面预留区</h2></div></div>
-        <div className="small">后续这里单独承载实时信号、执行控制、实时收益、当前持仓、日志与异常状态，不和真实盘口、策略回测混排。</div>
-        <div className="small" style={{ marginTop: 12 }}>当前阶段这里不放任何回测参数、K线主图或盘口账户信息。</div>
+      <section className="card panelCard realtimeHeroCard" style={{ marginTop: 16 }}>
+        <div className="panelHeader"><div><div className="sectionTag">执行总览</div><h2>实时策略主控台</h2></div></div>
+        <div className="modeHeroStats">
+          <div className="heroStatBox">
+            <span>运行状态</span>
+            <strong>{state.strategyStatus === 'running' ? '运行中' : state.strategyStatus === 'paused' ? '已暂停' : '已待命'}</strong>
+          </div>
+          <div className="heroStatBox">
+            <span>当前信号</span>
+            <strong>{strategyForm.lastSignal === 'buy' ? '买入' : strategyForm.lastSignal === 'sell' ? '卖出' : '观望'}</strong>
+          </div>
+          <div className="heroStatBox">
+            <span>今日收益</span>
+            <strong>{formatNumber(state.dailyPnl, 4)}</strong>
+          </div>
+          <div className="heroStatBox">
+            <span>当前回撤</span>
+            <strong>{formatNumber(state.drawdownPct, 2)}%</strong>
+          </div>
+        </div>
       </section>
+
+      <div className="grid modePageGrid realtimeModeGrid" style={{ marginTop: 16 }}>
+        <section className="card panelCard realtimeControlCard">
+          <div className="panelHeader"><div><div className="sectionTag">执行控制</div><h2>实时执行控制</h2></div></div>
+          <div className="small">后续这里会接启动、暂停、策略切换、风险停止等操作。</div>
+          <div className="statusRow" style={{ marginTop: 16 }}><span className="small">当前策略</span><strong>买入 / 卖出</strong></div>
+          <div className="statusRow"><span className="small">当前参数</span><strong>{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</strong></div>
+          <div className="statusRow"><span className="small">参考较优组合</span><strong>{bestBacktest ? `${bestBacktest.stopLossPct}% / ${bestBacktest.trailingDrawdownPct}%` : '-'}</strong></div>
+          <div className="row" style={{ marginTop: 16 }}>
+            <button>启动策略</button>
+            <button className="secondary">暂停策略</button>
+          </div>
+        </section>
+
+        <section className="card panelCard realtimeSignalCard">
+          <div className="panelHeader"><div><div className="sectionTag">实时信号</div><h2>信号与仓位状态</h2></div></div>
+          <div className="small">后续这里接实时行情、持仓方向、开仓价格、浮盈浮亏和最近一次信号。</div>
+          <div className="modeHeroStats" style={{ marginTop: 16 }}>
+            <div className="heroStatBox">
+              <span>当前持仓</span>
+              <strong>{state.positions.length}</strong>
+            </div>
+            <div className="heroStatBox">
+              <span>浮动盈亏</span>
+              <strong>{formatNumber(state.positions.reduce((sum, p) => sum + Number(p.unrealizedPnl ?? 0), 0), 4)}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="card panelCard realtimeLogCard">
+          <div className="panelHeader"><div><div className="sectionTag">执行日志</div><h2>策略日志预留区</h2></div></div>
+          <div className="small">后续这里接策略触发记录、成交记录、异常信息和风控中断原因。</div>
+          <div className="changelogList" style={{ marginTop: 16 }}>
+            <div className="changelogItem"><strong>最近信号</strong><div className="small">暂无实时信号</div></div>
+            <div className="changelogItem"><strong>最近执行</strong><div className="small">暂无执行记录</div></div>
+            <div className="changelogItem"><strong>风险提醒</strong><div className="small">暂无风控中断</div></div>
+          </div>
+        </section>
+      </div>
       </div>
     </main>
   );

@@ -200,6 +200,17 @@ summary {
 .marketSyncCard {
   min-height: 100%;
 }
+.realtimeHeroCard {
+  border-color: rgba(90,169,255,0.24);
+}
+.realtimeModeGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.realtimeControlCard,
+.realtimeSignalCard,
+.realtimeLogCard {
+  min-height: 100%;
+}
 .accentPanel {
   border-color: rgba(90,169,255,0.28);
   box-shadow: 0 14px 34px rgba(0,0,0,0.28), 0 0 0 1px rgba(90,169,255,0.08) inset;
@@ -740,6 +751,9 @@ button:disabled {
     grid-template-columns: 1fr;
   }
   .marketModeGrid {
+    grid-template-columns: 1fr;
+  }
+  .realtimeModeGrid {
     grid-template-columns: 1fr;
   }
   .modeSelectorRow {
