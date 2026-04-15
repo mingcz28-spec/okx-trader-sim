@@ -495,7 +495,7 @@ export default function HomePage() {
       <div className="hero okxHero">
         <div>
           <div className="badge">M狙击手</div>
-          <div className="deployVersionTag">版本 2026-04-14 / 22:37 / v0.3.1</div>
+          <div className="deployVersionTag">版本 2026-04-14 / 22:45 / v0.3.2</div>
           <h1 className="heroTitle">M狙击手操作界面</h1>
           <div className="small">用数据说话，以数据制定策略。</div>
           <div className="modeOverviewStrip" style={{ marginTop: 14 }}>
@@ -530,12 +530,16 @@ export default function HomePage() {
           <div>
             <div className="sectionTag">更新日志</div>
             <h2 style={{ margin: 0 }}>版本记录</h2>
-            <div className="small">当前版本 v0.3.1，可随时查看最近迭代内容。</div>
+            <div className="small">当前版本 v0.3.2，可随时查看最近迭代内容。</div>
           </div>
           <button className="secondary collapseBtn" onClick={() => setShowChangelog((v) => !v)}>{showChangelog ? '收起日志' : '展开日志'}</button>
         </div>
         {showChangelog ? (
           <div className="changelogList" style={{ marginTop: 16 }}>
+            <div className="changelogItem">
+              <strong>v0.3.2 - 2026-04-14 22:45</strong>
+              <div className="small">页面内新增可展开更新日志面板，方便直接查看迭代记录。</div>
+            </div>
             <div className="changelogItem">
               <strong>v0.3.1 - 2026-04-14 22:37</strong>
               <div className="small">修复三模式串页，修正桌面端显示逻辑，更新页面版本标记。</div>
