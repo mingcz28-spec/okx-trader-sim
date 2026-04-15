@@ -189,6 +189,32 @@ summary {
   background: rgba(255,255,255,0.025);
   border: 1px solid rgba(159,176,208,0.1);
 }
+.strategyPresetGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.strategyPresetCard {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(159,176,208,0.12);
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+}
+.strategyPresetCard strong,
+.strategyPresetCard span {
+  display: block;
+}
+.strategyPresetCard span {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.strategyPresetCard.active {
+  border-color: rgba(90,169,255,0.34);
+  box-shadow: 0 10px 24px rgba(90,169,255,0.1);
+  background: linear-gradient(180deg, rgba(18,31,52,0.96), rgba(11,20,34,0.96));
+}
 .marketModeHeroCard {
   border-color: rgba(90,169,255,0.24);
 }
@@ -754,6 +780,9 @@ button:disabled {
     grid-template-columns: 1fr;
   }
   .realtimeModeGrid {
+    grid-template-columns: 1fr;
+  }
+  .strategyPresetGrid {
     grid-template-columns: 1fr;
   }
   .modeSelectorRow {

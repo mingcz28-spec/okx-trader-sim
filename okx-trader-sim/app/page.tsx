@@ -137,6 +137,7 @@ export default function HomePage() {
   const [riskForm, setRiskForm] = useState(emptyState.riskConfig);
   const [tradeForm, setTradeForm] = useState({ symbol: 'BTC-USDT-SWAP', side: 'buy', leverage: 3, notional: 100 });
   const [strategyForm, setStrategyForm] = useState(emptyState.strategyConfig!);
+  const [strategyType, setStrategyType] = useState<'buy-sell' | 'trend' | 'mean-reversion' | 'breakout'>('buy-sell');
   const [syncMode, setSyncMode] = useState<'demo' | 'live'>('demo');
   const [appMode, setAppMode] = useState<'market' | 'backtest' | 'realtime'>('backtest');
   const [testing, setTesting] = useState(false);
@@ -495,7 +496,7 @@ export default function HomePage() {
       <div className="hero okxHero">
         <div>
           <div className="badge">M狙击手</div>
-          <div className="deployVersionTag">版本 2026-04-14 / 23:01 / v0.3.3</div>
+          <div className="deployVersionTag">版本 2026-04-15 / 00:11 / v0.3.4</div>
           <h1 className="heroTitle">M狙击手操作界面</h1>
           <div className="small">用数据说话，以数据制定策略。</div>
           <div className="modeOverviewStrip" style={{ marginTop: 14 }}>
@@ -530,12 +531,16 @@ export default function HomePage() {
           <div>
             <div className="sectionTag">更新日志</div>
             <h2 style={{ margin: 0 }}>版本记录</h2>
-            <div className="small">当前版本 v0.3.3，可随时查看最近迭代内容。</div>
+            <div className="small">当前版本 v0.3.4，可随时查看最近迭代内容。</div>
           </div>
           <button className="secondary collapseBtn" onClick={() => setShowChangelog((v) => !v)}>{showChangelog ? '收起日志' : '展开日志'}</button>
         </div>
         {showChangelog ? (
           <div className="changelogList" style={{ marginTop: 16 }}>
+            <div className="changelogItem">
+              <strong>v0.3.4 - 2026-04-15 00:11</strong>
+              <div className="small">策略回测页新增策略类型选择器和候选策略卡，开始为趋势跟随、均值回归、突破策略预留扩展位。</div>
+            </div>
             <div className="changelogItem">
               <strong>v0.3.3 - 2026-04-14 23:01</strong>
               <div className="small">实时策略页升级为独立执行界面骨架，新增执行总览、实时信号、执行日志三块区域。</div>
@@ -667,7 +672,7 @@ export default function HomePage() {
         <div className="modeHeroStats">
           <div className="heroStatBox">
             <span>策略类型</span>
-            <strong>买入 / 卖出</strong>
+            <strong>{strategyType === 'buy-sell' ? '买入 / 卖出' : strategyType === 'trend' ? '趋势跟随' : strategyType === 'mean-reversion' ? '均值回归' : '突破策略'}</strong>
           </div>
           <div className="heroStatBox">
             <span>当前参数</span>
@@ -685,6 +690,31 @@ export default function HomePage() {
         <div className="grid modePageGrid" style={{ marginTop: 16 }}>
           <section className="subPanelCard">
             <div className="small">策略参数</div>
+            <label style={{ marginTop: 12 }}>策略类型</label>
+            <select value={strategyType} onChange={(e) => setStrategyType(e.target.value as 'buy-sell' | 'trend' | 'mean-reversion' | 'breakout')}>
+              <option value="buy-sell">买入 / 卖出</option>
+              <option value="trend">趋势跟随</option>
+              <option value="mean-reversion">均值回归</option>
+              <option value="breakout">突破策略</option>
+            </select>
+            <div className="strategyPresetGrid" style={{ marginTop: 12 }}>
+              <div className={strategyType === 'buy-sell' ? 'strategyPresetCard active' : 'strategyPresetCard'} onClick={() => setStrategyType('buy-sell')}>
+                <strong>买入 / 卖出</strong>
+                <span>当前已接入回测</span>
+              </div>
+              <div className={strategyType === 'trend' ? 'strategyPresetCard active' : 'strategyPresetCard'} onClick={() => setStrategyType('trend')}>
+                <strong>趋势跟随</strong>
+                <span>适合主升主跌行情</span>
+              </div>
+              <div className={strategyType === 'mean-reversion' ? 'strategyPresetCard active' : 'strategyPresetCard'} onClick={() => setStrategyType('mean-reversion')}>
+                <strong>均值回归</strong>
+                <span>适合震荡区间</span>
+              </div>
+              <div className={strategyType === 'breakout' ? 'strategyPresetCard active' : 'strategyPresetCard'} onClick={() => setStrategyType('breakout')}>
+                <strong>突破策略</strong>
+                <span>适合放量突破</span>
+              </div>
+            </div>
             <label style={{ marginTop: 12 }}>止损比例 (%)</label>
             <input value={strategyForm.stopLossPct} onChange={(e) => setStrategyForm({ ...strategyForm, stopLossPct: Number(e.target.value) })} />
             <label style={{ marginTop: 12 }}>回撤卖出比例 (%)</label>
@@ -717,8 +747,8 @@ export default function HomePage() {
               <option value="4H">4H</option>
               <option value="1D">1D</option>
             </select>
-            <div className="small" style={{ marginTop: 12 }}>当前只接入买入 / 卖出策略，后续可扩展更多策略种类。</div>
-            <button style={{ marginTop: 12 }} onClick={() => runBacktest()} disabled={backtesting}>{backtesting ? '回测中...' : '运行策略回测'}</button>
+            <div className="small" style={{ marginTop: 12 }}>{strategyType === 'buy-sell' ? '当前已接入买入 / 卖出策略回测。' : strategyType === 'trend' ? '趋势跟随策略先作为候选方向展示，下一步可接回测逻辑。' : strategyType === 'mean-reversion' ? '均值回归策略先作为候选方向展示，下一步可接回测逻辑。' : '突破策略先作为候选方向展示，下一步可接回测逻辑。'}</div>
+            <button style={{ marginTop: 12 }} onClick={() => runBacktest()} disabled={backtesting || strategyType !== 'buy-sell'}>{backtesting ? '回测中...' : strategyType === 'buy-sell' ? '运行策略回测' : '该策略回测待接入'}</button>
             <button className="secondary" style={{ marginTop: 12 }} onClick={() => bestBacktest && applyBacktestParams(bestBacktest)} disabled={!bestBacktest}>采用较优组合</button>
           </section>
         </div>
@@ -1314,7 +1344,7 @@ export default function HomePage() {
         <section className="card panelCard realtimeControlCard">
           <div className="panelHeader"><div><div className="sectionTag">执行控制</div><h2>实时执行控制</h2></div></div>
           <div className="small">后续这里会接启动、暂停、策略切换、风险停止等操作。</div>
-          <div className="statusRow" style={{ marginTop: 16 }}><span className="small">当前策略</span><strong>买入 / 卖出</strong></div>
+          <div className="statusRow" style={{ marginTop: 16 }}><span className="small">当前策略</span><strong>{strategyType === 'buy-sell' ? '买入 / 卖出' : strategyType === 'trend' ? '趋势跟随' : strategyType === 'mean-reversion' ? '均值回归' : '突破策略'}</strong></div>
           <div className="statusRow"><span className="small">当前参数</span><strong>{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</strong></div>
           <div className="statusRow"><span className="small">参考较优组合</span><strong>{bestBacktest ? `${bestBacktest.stopLossPct}% / ${bestBacktest.trailingDrawdownPct}%` : '-'}</strong></div>
           <div className="row" style={{ marginTop: 16 }}>
