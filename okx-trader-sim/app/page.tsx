@@ -518,7 +518,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="card statusCard compactStatusCard">
-          <div className="statusRow"><span className="small">策略状态</span><strong className={state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}>{loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}</strong></div>
+          <div className="statusRow"><span className="small">连接状态</span><strong className={loading ? '' : 'good'}>{loading ? '加载中' : '已连接'}</strong></div>
           <div className="statusRow"><span className="small">API Key</span><strong>{maskedApiKey}</strong></div>
           <div className="statusRow"><span className="small">当前模式</span><strong>{appMode === 'market' ? '真实盘口' : appMode === 'backtest' ? '策略回测' : '实时策略'}</strong></div>
         </div>
@@ -541,7 +541,7 @@ export default function HomePage() {
         </section>
         <div className="grid modePageGrid" style={{ marginTop: 16 }}>
         <section className="card panelCard">
-          <div className="panelHeader"><div><div className="sectionTag">连接</div><h2>账户连接</h2></div></div>
+          <div className="panelHeader"><div><div className="sectionTag">连接</div><h2>账户连接与同步</h2></div></div>
           <label>API Key</label>
           <input value={apiForm.apiKey} onChange={(e) => setApiForm({ ...apiForm, apiKey: e.target.value })} placeholder="okx-api-key" />
           <label style={{ marginTop: 12 }}>Secret Key</label>
@@ -1221,6 +1221,7 @@ export default function HomePage() {
       <section className="card panelCard" style={{ marginTop: 16 }}>
         <div className="panelHeader"><div><div className="sectionTag">开发说明</div><h2>实时策略页面预留区</h2></div></div>
         <div className="small">后续这里单独承载实时信号、执行控制、实时收益、当前持仓、日志与异常状态，不和真实盘口、策略回测混排。</div>
+        <div className="small" style={{ marginTop: 12 }}>当前阶段这里不放任何回测参数、K线主图或盘口账户信息。</div>
       </section>
       </div>
     </main>
