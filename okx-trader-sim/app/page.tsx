@@ -475,8 +475,8 @@ export default function HomePage() {
     <main>
       <div className="marketStrip">
         <div className="marketChip">
-          <span>可用预测</span>
-          <strong>{selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '--'}</strong>
+          <span>可用余额</span>
+          <strong>{formatNumber(state.availableMargin, 4)}</strong>
         </div>
         <div className="marketChip">
           <span>状态</span>
@@ -497,6 +497,20 @@ export default function HomePage() {
           <div className="deployVersionTag">版本 2026-04-14 / 18:36 / v0.2</div>
           <h1 className="heroTitle">M狙击手操作界面</h1>
           <div className="small">用数据说话，以数据制定策略。</div>
+          <div className="modeOverviewStrip" style={{ marginTop: 14 }}>
+            <div className={appMode === 'market' ? 'modeOverviewItem active' : 'modeOverviewItem'}>
+              <strong>真实盘口</strong>
+              <span>资金、持仓、账户状态</span>
+            </div>
+            <div className={appMode === 'backtest' ? 'modeOverviewItem active' : 'modeOverviewItem'}>
+              <strong>策略回测</strong>
+              <span>参数测试、结果排序、图表验证</span>
+            </div>
+            <div className={appMode === 'realtime' ? 'modeOverviewItem active' : 'modeOverviewItem'}>
+              <strong>实时策略</strong>
+              <span>实时信号、收益跟踪、动态执行</span>
+            </div>
+          </div>
           <div className="modeSelectorRow" style={{ marginTop: 14 }}>
             <button className={appMode === 'market' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('market')}>真实盘口</button>
             <button className={appMode === 'backtest' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('backtest')}>策略回测</button>

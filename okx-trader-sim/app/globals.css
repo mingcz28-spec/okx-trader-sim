@@ -66,6 +66,31 @@ main {
 .statusCard {
   min-width: 280px;
 }
+.modeOverviewStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.modeOverviewItem {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(159,176,208,0.12);
+}
+.modeOverviewItem strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.modeOverviewItem span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.modeOverviewItem.active {
+  border-color: rgba(90,169,255,0.32);
+  box-shadow: 0 10px 26px rgba(90,169,255,0.12);
+  background: linear-gradient(180deg, rgba(24,43,72,0.95), rgba(13,25,43,0.95));
+}
 .modeSelectorRow {
   display: flex;
   gap: 10px;
@@ -589,6 +614,9 @@ button:disabled {
   }
   .statusCard {
     min-width: 100%;
+  }
+  .modeOverviewStrip {
+    grid-template-columns: 1fr;
   }
   .modeSelectorRow {
     flex-direction: column;
