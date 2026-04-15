@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { backtestDetail, backtestGrid, type SupportedBar } from '@/lib/backtest';
+import { backtestDetail, backtestGrid, type SupportedBar, type StrategyType } from '@/lib/backtest';
 import { getSimState, updateBacktest } from '@/lib/sim-store';
 
 export async function GET() {
@@ -12,17 +12,20 @@ export async function POST(request: NextRequest) {
     const instId = typeof body.instId === 'string' && body.instId ? body.instId : 'RAVE-USDT-SWAP';
     const allowedBars: SupportedBar[] = ['1m', '5m', '15m', '1H', '4H', '1D'];
     const bar: SupportedBar = allowedBars.includes(body.bar) ? body.bar : '1H';
+    const strategyType: StrategyType = body.strategyType === 'trend' ? 'trend' : body.strategyType === 'mean-reversion' ? 'mean-reversion' : body.strategyType === 'breakout' ? 'breakout' : 'buy-sell';
     if (body.mode === 'detail') {
       const result = await backtestDetail(
         instId,
         Number(body.stopLossPct ?? 1),
         Number(body.trailingDrawdownPct ?? 2),
         bar,
+        strategyType,
       );
       const current = getSimState().backtest;
       updateBacktest({
         instId: result.instId,
         bar: result.bar,
+        strategyType: result.strategyType,
         candles: result.candles.length,
         results: current?.results ?? [],
         top: current?.top ?? [],
@@ -32,10 +35,11 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ ok: true, ...result });
     }
-    const result = await backtestGrid(instId, bar);
+    const result = await backtestGrid(instId, bar, strategyType);
     updateBacktest({
       instId: result.instId,
       bar: result.bar,
+      strategyType: result.strategyType,
       candles: result.candles,
       results: result.results,
       top: result.top,

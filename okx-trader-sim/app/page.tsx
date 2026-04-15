@@ -250,7 +250,7 @@ export default function HomePage() {
       const res = await fetch('/api/backtest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instId: 'RAVE-USDT-SWAP', bar }),
+        body: JSON.stringify({ instId: 'RAVE-USDT-SWAP', bar, strategyType }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -289,6 +289,7 @@ export default function HomePage() {
         stopLossPct,
         trailingDrawdownPct,
         bar,
+        strategyType,
       }),
     });
     const data = await res.json();
@@ -328,7 +329,7 @@ export default function HomePage() {
         const gridRes = await fetch('/api/backtest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ instId: 'RAVE-USDT-SWAP', bar: nextBar }),
+          body: JSON.stringify({ instId: 'RAVE-USDT-SWAP', bar: nextBar, strategyType }),
         });
         const gridData = await gridRes.json();
         if (!gridRes.ok || !gridData.ok) {
@@ -496,7 +497,7 @@ export default function HomePage() {
       <div className="hero okxHero">
         <div>
           <div className="badge">M狙击手</div>
-          <div className="deployVersionTag">版本 2026-04-15 / 00:11 / v0.3.4</div>
+          <div className="deployVersionTag">版本 2026-04-15 / 13:24 / v0.3.5</div>
           <h1 className="heroTitle">M狙击手操作界面</h1>
           <div className="small">用数据说话，以数据制定策略。</div>
           <div className="modeOverviewStrip" style={{ marginTop: 14 }}>
@@ -531,12 +532,16 @@ export default function HomePage() {
           <div>
             <div className="sectionTag">更新日志</div>
             <h2 style={{ margin: 0 }}>版本记录</h2>
-            <div className="small">当前版本 v0.3.4，可随时查看最近迭代内容。</div>
+            <div className="small">当前版本 v0.3.5，可随时查看最近迭代内容。</div>
           </div>
           <button className="secondary collapseBtn" onClick={() => setShowChangelog((v) => !v)}>{showChangelog ? '收起日志' : '展开日志'}</button>
         </div>
         {showChangelog ? (
           <div className="changelogList" style={{ marginTop: 16 }}>
+            <div className="changelogItem">
+              <strong>v0.3.5 - 2026-04-15 13:24</strong>
+              <div className="small">趋势跟随策略接入真实回测逻辑，回测接口开始支持 strategyType 参数。</div>
+            </div>
             <div className="changelogItem">
               <strong>v0.3.4 - 2026-04-15 00:11</strong>
               <div className="small">策略回测页新增策略类型选择器和候选策略卡，开始为趋势跟随、均值回归、突破策略预留扩展位。</div>
@@ -748,7 +753,7 @@ export default function HomePage() {
               <option value="1D">1D</option>
             </select>
             <div className="small" style={{ marginTop: 12 }}>{strategyType === 'buy-sell' ? '当前已接入买入 / 卖出策略回测。' : strategyType === 'trend' ? '趋势跟随策略先作为候选方向展示，下一步可接回测逻辑。' : strategyType === 'mean-reversion' ? '均值回归策略先作为候选方向展示，下一步可接回测逻辑。' : '突破策略先作为候选方向展示，下一步可接回测逻辑。'}</div>
-            <button style={{ marginTop: 12 }} onClick={() => runBacktest()} disabled={backtesting || strategyType !== 'buy-sell'}>{backtesting ? '回测中...' : strategyType === 'buy-sell' ? '运行策略回测' : '该策略回测待接入'}</button>
+            <button style={{ marginTop: 12 }} onClick={() => runBacktest()} disabled={backtesting || (strategyType !== 'buy-sell' && strategyType !== 'trend')}>{backtesting ? '回测中...' : strategyType === 'buy-sell' || strategyType === 'trend' ? '运行策略回测' : '该策略回测待接入'}</button>
             <button className="secondary" style={{ marginTop: 12 }} onClick={() => bestBacktest && applyBacktestParams(bestBacktest)} disabled={!bestBacktest}>采用较优组合</button>
           </section>
         </div>

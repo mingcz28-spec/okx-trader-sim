@@ -17,6 +17,8 @@ export type BacktestTradePoint = {
   reason: 'stop_loss' | 'trailing_exit';
 };
 
+export type StrategyType = 'buy-sell' | 'trend' | 'mean-reversion' | 'breakout';
+
 export type BacktestResult = {
   stopLossPct: number;
   trailingDrawdownPct: number;
@@ -60,7 +62,7 @@ async function loadSeries(instId: string, bar: SupportedBar = '1H', limit = 100,
     .sort((a, b) => a.ts - b.ts);
 }
 
-function runStrategy(candles: CandlePoint[], stopLossPct: number, trailingDrawdownPct: number): BacktestDetail {
+function runBuySellStrategy(candles: CandlePoint[], stopLossPct: number, trailingDrawdownPct: number): BacktestDetail {
   const trades: BacktestTradePoint[] = [];
   let inPosition = false;
   let entry = 0;
@@ -128,24 +130,106 @@ function runStrategy(candles: CandlePoint[], stopLossPct: number, trailingDrawdo
   };
 }
 
-export async function backtestGrid(instId = 'RAVE-USDT-SWAP', bar: SupportedBar = '1H') {
+function runTrendStrategy(candles: CandlePoint[], stopLossPct: number, trailingDrawdownPct: number): BacktestDetail {
+  const trades: BacktestTradePoint[] = [];
+  let inPosition = false;
+  let entry = 0;
+  let entryTs = 0;
+  let peak = 0;
+
+  for (let i = 20; i < candles.length; i++) {
+    const c = candles[i];
+    const prev = candles.slice(i - 20, i);
+    const ma = prev.reduce((sum, item) => sum + item.close, 0) / prev.length;
+    const prevHigh = Math.max(...prev.map((item) => item.high));
+
+    if (!inPosition) {
+      if (c.close > ma && c.close >= prevHigh * 0.995) {
+        entry = c.close;
+        entryTs = c.ts;
+        peak = c.close;
+        inPosition = true;
+      }
+      continue;
+    }
+
+    if (c.high > peak) peak = c.high;
+    const stopPrice = entry * (1 - stopLossPct / 100);
+    const trailingPrice = peak * (1 - trailingDrawdownPct / 100);
+    const belowMa = c.close < ma;
+
+    let exitPrice: number | null = null;
+    let reason: 'stop_loss' | 'trailing_exit' | null = null;
+    if (c.low <= stopPrice) {
+      exitPrice = stopPrice;
+      reason = 'stop_loss';
+    } else if (c.low <= trailingPrice || belowMa) {
+      exitPrice = belowMa ? c.close : trailingPrice;
+      reason = 'trailing_exit';
+    }
+
+    if (exitPrice != null && reason) {
+      trades.push({
+        entryTs,
+        entryPrice: entry,
+        exitTs: c.ts,
+        exitPrice,
+        ret: (exitPrice - entry) / entry,
+        reason,
+      });
+      inPosition = false;
+      entry = 0;
+      entryTs = 0;
+      peak = 0;
+    }
+  }
+
+  const totalReturn = trades.reduce((acc, t) => acc * (1 + t.ret), 1) - 1;
+  let equity = 1;
+  let peakEq = 1;
+  let maxDd = 0;
+  for (const t of trades) {
+    equity *= 1 + t.ret;
+    peakEq = Math.max(peakEq, equity);
+    maxDd = Math.min(maxDd, equity / peakEq - 1);
+  }
+  const wins = trades.filter((t) => t.ret > 0).length;
+  return {
+    stopLossPct,
+    trailingDrawdownPct,
+    trades: trades.length,
+    winRate: trades.length ? wins / trades.length : 0,
+    totalReturn,
+    maxDrawdown: maxDd,
+    candles,
+    tradePoints: trades,
+  };
+}
+
+function runStrategyByType(strategyType: StrategyType, candles: CandlePoint[], stopLossPct: number, trailingDrawdownPct: number) {
+  if (strategyType === 'trend') return runTrendStrategy(candles, stopLossPct, trailingDrawdownPct);
+  return runBuySellStrategy(candles, stopLossPct, trailingDrawdownPct);
+}
+
+export async function backtestGrid(instId = 'RAVE-USDT-SWAP', bar: SupportedBar = '1H', strategyType: StrategyType = 'buy-sell') {
   const candles = await loadSeries(instId, bar);
   const results: BacktestResult[] = [];
   for (const stop of [0.5, 0.8, 1, 1.2, 1.5, 2]) {
     for (const trail of [1, 1.5, 2, 2.5, 3, 4]) {
-      results.push(runStrategy(candles, stop, trail));
+      results.push(runStrategyByType(strategyType, candles, stop, trail));
     }
   }
   results.sort((a, b) => b.totalReturn - a.totalReturn || b.winRate - a.winRate);
-  return { instId, bar, candles: candles.length, top: results.slice(0, 12), results };
+  return { instId, bar, strategyType, candles: candles.length, top: results.slice(0, 12), results };
 }
 
-export async function backtestDetail(instId = 'RAVE-USDT-SWAP', stopLossPct = 1, trailingDrawdownPct = 2, bar: SupportedBar = '1H') {
+export async function backtestDetail(instId = 'RAVE-USDT-SWAP', stopLossPct = 1, trailingDrawdownPct = 2, bar: SupportedBar = '1H', strategyType: StrategyType = 'buy-sell') {
   const candles = await loadSeries(instId, bar);
-  const detail = runStrategy(candles, stopLossPct, trailingDrawdownPct);
+  const detail = runStrategyByType(strategyType, candles, stopLossPct, trailingDrawdownPct);
   return {
     instId,
     bar,
+    strategyType,
     candles: detail.candles,
     tradePoints: detail.tradePoints,
     summary: {

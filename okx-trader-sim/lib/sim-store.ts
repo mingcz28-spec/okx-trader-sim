@@ -64,6 +64,7 @@ export type StrategyConfig = {
 export type BacktestSummary = {
   instId: string;
   bar: string;
+  strategyType?: 'buy-sell' | 'trend' | 'mean-reversion' | 'breakout';
   candles: number;
   results?: Array<{
     stopLossPct: number;
@@ -150,6 +151,7 @@ function createInitialState(): SimState {
     backtest: {
       instId: 'RAVE-USDT-SWAP',
       bar: '1H',
+      strategyType: 'buy-sell',
       candles: 0,
       results: [],
       top: [],
