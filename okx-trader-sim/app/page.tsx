@@ -539,8 +539,29 @@ export default function HomePage() {
           <h2 style={{ marginTop: 0 }}>真实盘口操作界面</h2>
           <div className="small">只看账户资金、持仓、委托和连接状态，不混入回测结果。</div>
         </section>
-        <div className="grid modePageGrid" style={{ marginTop: 16 }}>
-        <section className="card panelCard">
+        <section className="card panelCard marketModeHeroCard" style={{ marginTop: 16 }}>
+          <div className="panelHeader"><div><div className="sectionTag">账户总览</div><h2>账户 / 持仓 / 委托</h2></div></div>
+          <div className="modeHeroStats">
+            <div className="heroStatBox">
+              <span>账户权益</span>
+              <strong>{balanceTop?.totalEq ?? '-'}</strong>
+            </div>
+            <div className="heroStatBox">
+              <span>可用余额</span>
+              <strong>{formatNumber(state.availableMargin, 8)}</strong>
+            </div>
+            <div className="heroStatBox">
+              <span>当前持仓</span>
+              <strong>{state.positions.length}</strong>
+            </div>
+            <div className="heroStatBox">
+              <span>历史委托</span>
+              <strong>{(state.orderHistory || []).length}</strong>
+            </div>
+          </div>
+        </section>
+        <div className="grid modePageGrid marketModeGrid" style={{ marginTop: 16 }}>
+        <section className="card panelCard marketConnectCard">
           <div className="panelHeader"><div><div className="sectionTag">连接</div><h2>账户连接与同步</h2></div></div>
           <label>API Key</label>
           <input value={apiForm.apiKey} onChange={(e) => setApiForm({ ...apiForm, apiKey: e.target.value })} placeholder="okx-api-key" />
@@ -583,6 +604,13 @@ export default function HomePage() {
               <strong>{balanceTop?.details?.length ?? 0}</strong>
             </div>
           </div>
+        </section>
+        <section className="card panelCard marketSyncCard">
+          <div className="panelHeader"><div><div className="sectionTag">交易状态</div><h2>同步与连接状态</h2></div></div>
+          <div className="statusRow"><span className="small">连接状态</span><strong>{loading ? '加载中' : '已连接'}</strong></div>
+          <div className="statusRow"><span className="small">同步模式</span><strong>{syncMode === 'live' ? '真实盘' : '模拟盘'}</strong></div>
+          <div className="statusRow"><span className="small">资产项数量</span><strong>{balanceTop?.details?.length ?? 0}</strong></div>
+          <div className="statusRow"><span className="small">数据来源</span><strong>OKX 原始返回</strong></div>
         </section>
         </div>
       </div>
@@ -1116,8 +1144,9 @@ export default function HomePage() {
         </table>
       </section>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>当前持仓</h2>
+      <section className="card panelCard" style={{ marginTop: 16 }}>
+        <div className="panelHeader"><div><div className="sectionTag">持仓</div><h2>当前持仓明细</h2></div></div>
+        <div className="small">这里只展示当前持仓，不包含任何策略回测结果。</div>
         <div className="mobileList">
           {state.positions.length ? state.positions.map((p) => (
             <div className="mobileItem" key={p.id}>
@@ -1165,8 +1194,9 @@ export default function HomePage() {
         </table>
       </section>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>历史委托</h2>
+      <section className="card panelCard" style={{ marginTop: 16 }}>
+        <div className="panelHeader"><div><div className="sectionTag">委托</div><h2>历史委托明细</h2></div></div>
+        <div className="small">这里只展示真实盘口相关的历史委托记录。</div>
         <div className="mobileList">
           {(state.orderHistory || []).length ? state.orderHistory!.map((o) => (
             <div className="mobileItem" key={o.id}>

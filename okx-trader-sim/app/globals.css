@@ -189,6 +189,17 @@ summary {
   background: rgba(255,255,255,0.025);
   border: 1px solid rgba(159,176,208,0.1);
 }
+.marketModeHeroCard {
+  border-color: rgba(90,169,255,0.24);
+}
+.marketModeGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.marketConnectCard,
+.marketOverviewCard,
+.marketSyncCard {
+  min-height: 100%;
+}
 .accentPanel {
   border-color: rgba(90,169,255,0.28);
   box-shadow: 0 14px 34px rgba(0,0,0,0.28), 0 0 0 1px rgba(90,169,255,0.08) inset;
@@ -706,6 +717,9 @@ button:disabled {
     grid-template-columns: 1fr;
   }
   .modeHeroStats {
+    grid-template-columns: 1fr;
+  }
+  .marketModeGrid {
     grid-template-columns: 1fr;
   }
   .modeSelectorRow {
