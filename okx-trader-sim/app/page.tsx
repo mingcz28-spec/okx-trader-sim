@@ -562,25 +562,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="card panelCard accentPanel">
-          <div className="panelHeader"><div><div className="sectionTag">策略</div><h2>交易规则</h2></div></div>
-          <div className="small">买入后满足止损或回撤条件之一，就会触发卖出。</div>
-          <label style={{ marginTop: 12 }}>启用策略</label>
-          <select value={strategyForm.enabled ? 'on' : 'off'} onChange={(e) => setStrategyForm({ ...strategyForm, enabled: e.target.value === 'on' })}>
-            <option value="off">关闭</option>
-            <option value="on">开启</option>
-          </select>
-          <label style={{ marginTop: 12 }}>止损比例 (%)</label>
-          <input value={strategyForm.stopLossPct} onChange={(e) => setStrategyForm({ ...strategyForm, stopLossPct: Number(e.target.value) })} />
-          <label style={{ marginTop: 12 }}>回撤卖出比例 (%)</label>
-          <input value={strategyForm.trailingDrawdownPct} onChange={(e) => setStrategyForm({ ...strategyForm, trailingDrawdownPct: Number(e.target.value) })} />
-          <div className="small" style={{ marginTop: 12 }}>规则说明: 跌破买入价 {strategyForm.stopLossPct}% 卖出，或从买入后最高价回撤 {strategyForm.trailingDrawdownPct}% 卖出。</div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button onClick={saveStrategyConfig}>保存策略</button>
-            <button className="secondary" onClick={() => runBacktest()}>{backtesting ? '回测中...' : '回测 RAVE 策略'}</button>
-          </div>
-        </section>
-
         <section className="card panelCard marketOverviewCard">
           <div className="panelHeader"><div><div className="sectionTag">账户概览</div><h2>账户核心数据</h2></div></div>
           <div className="small">这些数值直接来自交易所返回结果，不做额外换算。</div>
@@ -1233,57 +1214,14 @@ export default function HomePage() {
       <div className="mobileSection" data-tab="realtime" data-active={appMode === 'realtime'}>
       <section className="card pageModeIntroCard" style={{ marginTop: 16 }}>
         <div className="sectionTag">实时策略</div>
-        <h2 style={{ marginTop: 0 }}>实时策略操作界面</h2>
-        <div className="small">选择回测里验证过的参数，进入实时执行和收益跟踪。</div>
-      </section>
-      <section className="card panelCard realtimeHeroCard" style={{ marginTop: 16 }}>
-        <div className="panelHeader"><div><div className="sectionTag">实时策略</div><h2>实时策略总览</h2></div></div>
-        <div className="modeHeroStats">
-          <div className="heroStatBox">
-            <span>当前策略</span>
-            <strong>买入 / 卖出</strong>
-          </div>
-          <div className="heroStatBox">
-            <span>最佳参数</span>
-            <strong>{selectedBacktest ? `${selectedBacktest.stopLossPct}% / ${selectedBacktest.trailingDrawdownPct}%` : '-'}</strong>
-          </div>
-          <div className="heroStatBox">
-            <span>参考回测收益</span>
-            <strong>{selectedBacktest ? `${formatNumber(selectedBacktest.totalReturn * 100, 2)}%` : '-'}</strong>
-          </div>
-          <div className="heroStatBox">
-            <span>实时收益</span>
-            <strong>开发中</strong>
-          </div>
-        </div>
+        <h2 style={{ marginTop: 0 }}>实时策略页面待设计</h2>
+        <div className="small">这里不沿用回测页内容。等你定好实时策略页面结构后，再单独开发新的执行界面。</div>
       </section>
 
-      <div className="grid modePageGrid" style={{ marginTop: 16 }}>
-      <section className="card panelCard">
-        <div className="panelHeader"><div><div className="sectionTag">执行状态</div><h2>策略执行状态</h2></div></div>
-        <div className="small">这里后续会显示实时开关、运行状态、最后一次触发信号和执行结果。</div>
-        <div className="statusList" style={{ marginTop: 16 }}>
-          <div className="statusRow"><span className="small">运行状态</span><strong>{state.strategyStatus === 'running' ? '运行中' : state.strategyStatus === 'paused' ? '已暂停' : '已待命'}</strong></div>
-          <div className="statusRow"><span className="small">最后信号</span><strong>{strategyForm.lastSignal === 'buy' ? '买入' : strategyForm.lastSignal === 'sell' ? '卖出' : '观望'}</strong></div>
-          <div className="statusRow"><span className="small">当前参数</span><strong>{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</strong></div>
-        </div>
+      <section className="card panelCard" style={{ marginTop: 16 }}>
+        <div className="panelHeader"><div><div className="sectionTag">开发说明</div><h2>实时策略页面预留区</h2></div></div>
+        <div className="small">后续这里单独承载实时信号、执行控制、实时收益、当前持仓、日志与异常状态，不和真实盘口、策略回测混排。</div>
       </section>
-
-      <section className="card panelCard">
-        <div className="panelHeader"><div><div className="sectionTag">收益跟踪</div><h2>实时收益监控</h2></div></div>
-        <div className="small">这里后续会接实时收益曲线、浮盈浮亏和策略净值走势。</div>
-        <div className="modeHeroStats" style={{ marginTop: 16 }}>
-          <div className="heroStatBox">
-            <span>今日收益</span>
-            <strong>{formatNumber(state.dailyPnl, 4)}</strong>
-          </div>
-          <div className="heroStatBox">
-            <span>当前回撤</span>
-            <strong>{formatNumber(state.drawdownPct, 2)}%</strong>
-          </div>
-        </div>
-      </section>
-      </div>
       </div>
     </main>
   );
