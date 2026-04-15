@@ -739,38 +739,29 @@ export default function HomePage() {
             );
           }) : <div className="small">还没有回测结果，点“回测 RAVE 策略”即可。</div>}
         </div>
-        <table className="table desktopOnly" style={{ marginTop: 16 }}>
-          <thead>
-            <tr>
-              <th>止损 %</th>
-              <th>回撤卖出 %</th>
-              <th>交易次数</th>
-              <th>胜率</th>
-              <th>总收益</th>
-              <th>最大回撤</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedBacktestResults.length ? sortedBacktestResults.map((r) => {
-              const key = `${r.stopLossPct}-${r.trailingDrawdownPct}`;
-              const isSelected = key === selectedBacktestKey;
-              return (
-                <tr key={key} style={isSelected ? { background: 'rgba(96, 165, 250, 0.12)' } : undefined}>
-                  <td>{r.stopLossPct}</td>
-                  <td>{r.trailingDrawdownPct}</td>
-                  <td>{r.trades}</td>
-                  <td>{formatNumber(r.winRate * 100, 2)}%</td>
-                  <td>{formatNumber(r.totalReturn * 100, 2)}%</td>
-                  <td>{formatNumber(r.maxDrawdown * 100, 2)}%</td>
-                  <td><button className="secondary" onClick={() => applyBacktestParams(r)}>{isSelected ? '已选中' : '采用这组'}</button></td>
-                </tr>
-              );
-            }) : (
-              <tr><td colSpan={7} className="small">还没有回测结果，点“回测 RAVE 策略”即可。</td></tr>
-            )}
-          </tbody>
-        </table>
+        <div className="desktopRankGrid" style={{ marginTop: 16 }}>
+          {sortedBacktestResults.length ? sortedBacktestResults.map((r, index) => {
+            const key = `${r.stopLossPct}-${r.trailingDrawdownPct}`;
+            const isSelected = key === selectedBacktestKey;
+            return (
+              <div className={isSelected ? 'rankCard selected' : 'rankCard'} key={key}>
+                <div className="rankCardHead">
+                  <div>
+                    <div className="small">参数排行 #{index + 1}</div>
+                    <strong>{r.stopLossPct}% / {r.trailingDrawdownPct}%</strong>
+                  </div>
+                  <button className="secondary" onClick={() => applyBacktestParams(r)}>{isSelected ? '已选中' : '采用这组'}</button>
+                </div>
+                <div className="rankCardGrid">
+                  <div><span className="small">交易次数</span><strong>{r.trades}</strong></div>
+                  <div><span className="small">胜率</span><strong>{formatNumber(r.winRate * 100, 2)}%</strong></div>
+                  <div><span className="small">总收益</span><strong className={r.totalReturn >= 0 ? 'good' : 'bad'}>{formatNumber(r.totalReturn * 100, 2)}%</strong></div>
+                  <div><span className="small">最大回撤</span><strong>{formatNumber(r.maxDrawdown * 100, 2)}%</strong></div>
+                </div>
+              </div>
+            );
+          }) : <div className="small">还没有回测结果，点“回测 RAVE 策略”即可。</div>}
+        </div>
         </> : null}
       </section>
 
