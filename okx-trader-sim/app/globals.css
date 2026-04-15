@@ -234,6 +234,23 @@ summary {
   border-color: rgba(90, 169, 255, 0.45);
   box-shadow: 0 8px 24px rgba(90, 169, 255, 0.12);
 }
+.changelogCard {
+  border-color: rgba(90,169,255,0.18);
+}
+.changelogList {
+  display: grid;
+  gap: 10px;
+}
+.changelogItem {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(159,176,208,0.1);
+}
+.changelogItem strong {
+  display: block;
+  margin-bottom: 6px;
+}
 .backtestResultCard {
   scroll-margin-top: 16px;
 }

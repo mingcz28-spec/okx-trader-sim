@@ -155,6 +155,7 @@ export default function HomePage() {
   const [focusedCandleIndex, setFocusedCandleIndex] = useState<number | null>(null);
   const [showBacktestResults, setShowBacktestResults] = useState(false);
   const [showEquityCurve, setShowEquityCurve] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
   const backtestResultRef = useRef<HTMLElement | null>(null);
 
   async function refreshState() {
@@ -523,6 +524,37 @@ export default function HomePage() {
           <div className="statusRow"><span className="small">当前模式</span><strong>{appMode === 'market' ? '真实盘口' : appMode === 'backtest' ? '策略回测' : '实时策略'}</strong></div>
         </div>
       </div>
+
+      <section className="card panelCard changelogCard" style={{ marginBottom: 16 }}>
+        <div className="collapseBar">
+          <div>
+            <div className="sectionTag">更新日志</div>
+            <h2 style={{ margin: 0 }}>版本记录</h2>
+            <div className="small">当前版本 v0.3.1，可随时查看最近迭代内容。</div>
+          </div>
+          <button className="secondary collapseBtn" onClick={() => setShowChangelog((v) => !v)}>{showChangelog ? '收起日志' : '展开日志'}</button>
+        </div>
+        {showChangelog ? (
+          <div className="changelogList" style={{ marginTop: 16 }}>
+            <div className="changelogItem">
+              <strong>v0.3.1 - 2026-04-14 22:37</strong>
+              <div className="small">修复三模式串页，修正桌面端显示逻辑，更新页面版本标记。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.3.0 - 2026-04-14 22:29</strong>
+              <div className="small">真实盘口整理为账户 / 持仓 / 委托三段式结构。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.2.8 - 2026-04-14 22:18</strong>
+              <div className="small">明确分离真实盘口、策略回测、实时策略三种页面职责。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>完整日志</strong>
+              <div className="small">查看文件：okx-trader-sim/CHANGELOG.md</div>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       {message ? <div className="card flashCard" style={{ marginBottom: 16 }}>{message}</div> : null}
       {error ? <div className="card bad" style={{ marginBottom: 16 }}>{error}</div> : null}
