@@ -692,7 +692,7 @@ export default function HomePage() {
         </div>
       </section>
       <section className="card backtestResultCard panelCard backtestResultSection" style={{ marginTop: 16 }} ref={backtestResultRef}>
-        <div className="panelHeader"><div><div className="sectionTag">回测结果</div><h2>RAVE 策略表现</h2></div></div>
+        <div className="panelHeader"><div><div className="sectionTag">参数排行</div><h2>回测参数筛选结果</h2></div></div>
         <div className="collapseBar">
           <div className="small">样本: {backtestCandles || 0} 根 1H K 线。只用于测试，不代表实盘表现。</div>
           <button className="secondary collapseBtn" onClick={() => setShowBacktestResults((v) => !v)}>{showBacktestResults ? '收起结果' : '展开结果'}</button>

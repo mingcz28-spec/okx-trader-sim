@@ -360,8 +360,8 @@ button:disabled {
 .legendDot.buy { background: #2d8cff; }
 .legendDot.sell { background: #f5b942; }
 .okxStageCard {
-  border-color: rgba(255,255,255,0.08);
-  box-shadow: 0 16px 40px rgba(0,0,0,0.34);
+  border-color: rgba(90,169,255,0.18);
+  box-shadow: 0 22px 54px rgba(0,0,0,0.4), 0 0 0 1px rgba(90,169,255,0.06) inset;
 }
 .okxChartShell {
   display: grid;
@@ -391,6 +391,7 @@ button:disabled {
 }
 .okxMainChartWrap {
   min-width: 0;
+  min-height: 620px;
 }
 .okxChartFoot {
   grid-column: 1 / -1;
@@ -580,9 +581,12 @@ button:disabled {
 }
 .primaryChartSection {
   order: 2;
+  padding: 22px;
 }
 .backtestResultSection {
   order: 3;
+  border-color: rgba(255,255,255,0.06);
+  background: linear-gradient(180deg, rgba(12,20,34,0.96), rgba(10,17,28,0.96));
 }
 .chartActionRow {
   display: flex;
@@ -704,6 +708,9 @@ button:disabled {
   }
   .okxChartShell {
     grid-template-columns: 1fr;
+  }
+  .okxMainChartWrap {
+    min-height: 0;
   }
   .okxToolRail {
     display: none;
