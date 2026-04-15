@@ -566,6 +566,9 @@ button:disabled {
   display: none;
 }
 .mobileSection[data-active="false"] {
+  display: none;
+}
+.mobileSection[data-active="true"] {
   display: block;
 }
 .mobileTab {
