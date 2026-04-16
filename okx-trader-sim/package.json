@@ -1,25 +1,15 @@
 {
   "name": "okx-trader-sim",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "engines": {
-    "node": ">=20.9.0"
-  },
+  "description": "Frontend/backend split OKX trader simulator.",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "next": "16.2.3",
-    "react": "19.2.0",
-    "react-dom": "19.2.0"
-  },
-  "devDependencies": {
-    "typescript": "5.5.4",
-    "@types/node": "22.7.4",
-    "@types/react": "18.3.3",
-    "@types/react-dom": "18.3.0"
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "dotnet publish backend/OkxTraderSim.Api.csproj -c Release -o out",
+    "build:railway": "npm --prefix frontend ci && npm --prefix frontend run build && dotnet publish backend/OkxTraderSim.Api.csproj -c Release -o out && node scripts/copy-frontend-dist.mjs",
+    "dev:backend": "dotnet run --project backend/OkxTraderSim.Api.csproj",
+    "mongo:up": "docker compose up -d mongo",
+    "mongo:down": "docker compose down"
   }
 }

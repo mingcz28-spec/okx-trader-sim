@@ -51,6 +51,148 @@ main {
 .okxHero {
   margin-bottom: 18px;
 }
+.compactHero {
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+.heroMainBlock {
+  width: 100%;
+}
+.heroTopRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.heroMetaInlineRow {
+  justify-content: space-between;
+}
+.heroVersionInline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.heroVersionParallel {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+}
+.heroVersionTextRow {
+  gap: 6px;
+}
+.inlineDeployVersionTag {
+  padding: 0;
+  min-height: auto;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.versionDot {
+  color: rgba(159,176,208,0.72);
+  font-size: 12px;
+}
+.textInlineVersionLink {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  line-height: 1;
+}
+.heroVersionTextLine {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.plainVersionText {
+  color: rgba(159,176,208,0.88);
+  font-size: 12px;
+  line-height: 1;
+}
+.plainVersionLink {
+  font-size: 12px;
+  line-height: 1;
+}
+.heroRightLink {
+  margin-left: auto;
+}
+.inlineVersionLink {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(159,208,255,0.92);
+}
+.inlineVersionLink:hover {
+  color: #d9ecff;
+}
+.subtleVersionLink {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(159,176,208,0.78);
+}
+.subtleVersionLink:hover {
+  color: rgba(207,230,255,0.92);
+}
+.heroControlBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.tighterHeroControlBar {
+  margin-top: 10px;
+  gap: 10px;
+}
+.compactStatusInline {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+}
+.compactStatusPills span {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(159,176,208,0.12);
+  background: rgba(255,255,255,0.03);
+}
+.marketHeroHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.marketHeroStatus {
+  justify-content: flex-end;
+}
+.marketHeroInlineStatus {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.marketHeroInlineStatus span {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(159,176,208,0.12);
+  background: rgba(255,255,255,0.03);
+  color: var(--muted);
+  font-size: 13px;
+}
+.marketHeroInlineStatus strong {
+  color: var(--text);
+}
+.compactStatusInline strong {
+  color: var(--text);
+  margin-left: 4px;
+}
 .hero {
   display: flex;
   justify-content: space-between;
@@ -63,19 +205,27 @@ main {
   margin: 12px 0 8px;
   font-size: 34px;
 }
+.heroTitleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.heroTitleRow:empty {
+  display: none;
+}
+.heroTitleRow .heroTitle {
+  margin-bottom: 0;
+}
 .statusCard {
   min-width: 280px;
 }
 .modeOverviewStrip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  display: none;
 }
 .modeOverviewItem {
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(159,176,208,0.12);
+  display: none;
 }
 .modeOverviewItem strong {
   display: block;
@@ -95,6 +245,9 @@ main {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+.compactModeSelectorRow {
+  flex: 1;
 }
 .modeSwitchBtn {
   width: auto;
@@ -271,8 +424,32 @@ summary {
   border-color: rgba(90, 169, 255, 0.45);
   box-shadow: 0 8px 24px rgba(90, 169, 255, 0.12);
 }
+.compactNoticeCard {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 13px;
+}
 .changelogCard {
   border-color: rgba(90,169,255,0.18);
+}
+.compactChangelogCard {
+  padding-top: 14px;
+}
+.heroMetaRow {
+  margin-top: 10px;
+}
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9fd0ff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.linkButton:hover {
+  color: #cfe6ff;
+  text-decoration: underline;
 }
 .changelogList {
   display: grid;
@@ -677,6 +854,9 @@ button:disabled {
   width: auto;
   min-width: 120px;
 }
+.compactCollapseBar {
+  align-items: flex-start;
+}
 .periodBtn {
   width: auto;
   min-width: 0;
@@ -746,6 +926,27 @@ button:disabled {
   margin-top: 4px;
   font-size: 18px;
 }
+.realtimeDecisionBox {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(90,169,255,0.18);
+  background: linear-gradient(180deg, rgba(17,30,50,0.9), rgba(10,19,33,0.9));
+}
+.realtimeDecisionBox strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 18px;
+  line-height: 1.5;
+}
+.realtimeDecisionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
 @media (max-width: 768px) {
   main {
     padding: 16px 10px 40px;
@@ -773,6 +974,20 @@ button:disabled {
   .modeOverviewStrip {
     grid-template-columns: 1fr;
   }
+  .heroTopRow {
+    align-items: flex-start;
+  }
+  .heroRightLink {
+    margin-left: 0;
+  }
+  .heroControlBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .compactStatusInline {
+    flex-direction: column;
+    gap: 8px;
+  }
   .modeHeroStats {
     grid-template-columns: 1fr;
   }
@@ -787,6 +1002,9 @@ button:disabled {
   }
   .modeSelectorRow {
     flex-direction: column;
+  }
+  .compactModeSelectorRow {
+    width: 100%;
   }
   .modeSwitchBtn {
     width: 100%;

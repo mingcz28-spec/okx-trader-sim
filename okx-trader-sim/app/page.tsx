@@ -139,7 +139,7 @@ export default function HomePage() {
   const [strategyForm, setStrategyForm] = useState(emptyState.strategyConfig!);
   const [strategyType, setStrategyType] = useState<'buy-sell' | 'trend' | 'mean-reversion' | 'breakout'>('buy-sell');
   const [syncMode, setSyncMode] = useState<'demo' | 'live'>('demo');
-  const [appMode, setAppMode] = useState<'market' | 'backtest' | 'realtime'>('backtest');
+  const [appMode, setAppMode] = useState<'market' | 'backtest' | 'realtime'>('market');
   const [testing, setTesting] = useState(false);
   const [backtesting, setBacktesting] = useState(false);
   const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([]);
@@ -473,71 +473,114 @@ export default function HomePage() {
   }).join(' ');
   const equityTicks = equitySeries.length ? [maxEquity, minEquity + equityRange * 0.66, minEquity + equityRange * 0.33, minEquity] : [];
   const equityXLabels = equitySeries.length ? [0, Math.floor((equitySeries.length - 1) / 2), equitySeries.length - 1] : [];
+  const currentStrategyLabel = strategyType === 'buy-sell' ? '买入 / 卖出' : strategyType === 'trend' ? '趋势跟随' : strategyType === 'mean-reversion' ? '均值回归' : '突破策略';
+  const marketStateLabel = strategyType === 'trend' ? '趋势识别中' : state.drawdownPct <= -3 ? '弱势收缩' : state.strategyStatus === 'running' ? '观察执行中' : '等待确认';
+  const suggestedStrategyLabel = strategyType === 'trend' ? '趋势跟随' : state.drawdownPct <= -3 ? '先观望 / 防守' : '买入 / 卖出';
+  const riskStateLabel = state.drawdownPct <= -3 ? '高警惕' : state.drawdownPct <= -1 ? '中性偏谨慎' : '可控';
+  const executionAdvice = state.drawdownPct <= -3 ? '波动与回撤偏大，优先降低频率，等待更明确结构。' : strategyType === 'trend' ? '若重新站上关键均线并放量，可继续观察趋势延续。' : '当前可继续观察基础策略信号，但不宜激进放大仓位。';
 
   return (
     <main>
-      <div className="marketStrip">
-        <div className="marketChip">
-          <span>可用余额</span>
-          <strong>{formatNumber(state.availableMargin, 4)}</strong>
-        </div>
-        <div className="marketChip">
-          <span>状态</span>
-          <strong className={state.strategyStatus === 'running' ? 'good' : state.strategyStatus === 'paused' ? 'bad' : ''}>{loading ? '加载中' : state.strategyStatus === 'idle' ? '已待命' : state.strategyStatus === 'running' ? '运行中' : '已暂停'}</strong>
-        </div>
-        <div className="marketChip">
-          <span>模式</span>
-          <strong>{appMode === 'market' ? '真实盘口' : appMode === 'backtest' ? '策略回测' : '实时策略'}</strong>
-        </div>
-        <div className="marketChip">
-          <span>标的</span>
-          <strong>RAVE-USDT-SWAP</strong>
-        </div>
-      </div>
-      <div className="hero okxHero">
-        <div>
-          <div className="badge">M狙击手</div>
-          <div className="deployVersionTag">版本 2026-04-15 / 13:24 / v0.3.5</div>
-          <h1 className="heroTitle">M狙击手操作界面</h1>
+      <div className="hero okxHero compactHero">
+        <div className="heroMainBlock">
+          <div className="heroTopRow heroMetaInlineRow">
+            <div className="badge">M狙击手</div>
+            <div className="heroVersionTextLine"><span className="plainVersionText">版本 2026-04-15 / 21:26 / v0.4.14</span><span className="versionDot">·</span><button className="linkButton subtleVersionLink textInlineVersionLink plainVersionLink" onClick={() => setShowChangelog((v) => !v)}>{showChangelog ? '收起记录' : '版本记录'}</button></div>
+          </div>
+          <div className="heroTitleRow"><h1 className="heroTitle">M狙击手操作界面</h1></div>
           <div className="small">用数据说话，以数据制定策略。</div>
-          <div className="modeOverviewStrip" style={{ marginTop: 14 }}>
-            <div className={appMode === 'market' ? 'modeOverviewItem active' : 'modeOverviewItem'}>
-              <strong>真实盘口</strong>
-              <span>资金、持仓、账户状态</span>
-            </div>
-            <div className={appMode === 'backtest' ? 'modeOverviewItem active' : 'modeOverviewItem'}>
-              <strong>策略回测</strong>
-              <span>参数测试、结果排序、图表验证</span>
-            </div>
-            <div className={appMode === 'realtime' ? 'modeOverviewItem active' : 'modeOverviewItem'}>
-              <strong>实时策略</strong>
-              <span>实时信号、收益跟踪、动态执行</span>
+          <div className="heroControlBar tighterHeroControlBar">
+            <div className="modeSelectorRow compactModeSelectorRow">
+              <button className={appMode === 'market' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('market')}>真实盘口</button>
+              <button className={appMode === 'backtest' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('backtest')}>策略回测</button>
+              <button className={appMode === 'realtime' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('realtime')}>实时策略</button>
             </div>
           </div>
-          <div className="modeSelectorRow" style={{ marginTop: 14 }}>
-            <button className={appMode === 'market' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('market')}>真实盘口</button>
-            <button className={appMode === 'backtest' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('backtest')}>策略回测</button>
-            <button className={appMode === 'realtime' ? 'modeSwitchBtn active' : 'modeSwitchBtn'} onClick={() => setAppMode('realtime')}>实时策略</button>
-          </div>
-        </div>
-        <div className="card statusCard compactStatusCard">
-          <div className="statusRow"><span className="small">连接状态</span><strong className={loading ? '' : 'good'}>{loading ? '加载中' : '已连接'}</strong></div>
-          <div className="statusRow"><span className="small">API Key</span><strong>{maskedApiKey}</strong></div>
-          <div className="statusRow"><span className="small">当前模式</span><strong>{appMode === 'market' ? '真实盘口' : appMode === 'backtest' ? '策略回测' : '实时策略'}</strong></div>
         </div>
       </div>
 
-      <section className="card panelCard changelogCard" style={{ marginBottom: 16 }}>
-        <div className="collapseBar">
-          <div>
-            <div className="sectionTag">更新日志</div>
-            <h2 style={{ margin: 0 }}>版本记录</h2>
-            <div className="small">当前版本 v0.3.5，可随时查看最近迭代内容。</div>
+      {showChangelog ? (
+        <section className="card panelCard changelogCard compactChangelogCard" style={{ marginBottom: 16 }}>
+          <div className="collapseBar compactCollapseBar">
+            <div>
+              <div className="sectionTag">更新日志</div>
+              <div className="small">当前版本 v0.4.14，可随时查看最近迭代内容。</div>
+            </div>
+            <button className="secondary collapseBtn" onClick={() => setShowChangelog(false)}>关闭</button>
           </div>
-          <button className="secondary collapseBtn" onClick={() => setShowChangelog((v) => !v)}>{showChangelog ? '收起日志' : '展开日志'}</button>
-        </div>
-        {showChangelog ? (
-          <div className="changelogList" style={{ marginTop: 16 }}>
+          <div className="changelogList" style={{ marginTop: 12 }}>
+            <div className="changelogItem">
+              <strong>v0.4.14 - 2026-04-15 21:26</strong>
+              <div className="small">账户连接区的成功/错误反馈合并为同一个消息框，不再分开显示。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.13 - 2026-04-15 21:24</strong>
+              <div className="small">将顶部成功提示也挪到账户连接卡底部，与同步连接区域保持同一组反馈位置。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.12 - 2026-04-15 21:21</strong>
+              <div className="small">将 401 错误提示继续下移到账户连接卡底部，按卡片内底部位置显示。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.11 - 2026-04-15 21:19</strong>
+              <div className="small">将顶部 401 错误提示挪到账户连接区下方，不再横压在首屏上方。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.10 - 2026-04-15 21:17</strong>
+              <div className="small">恢复账户总览标题栏右上角的状态显示，避免总览内部留白过多。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.9 - 2026-04-15 21:15</strong>
+              <div className="small">账户总览的连接状态与 Key 从标题栏移入总览卡内部，减少右上角空白。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.8 - 2026-04-15 21:12</strong>
+              <div className="small">账户连接区按钮改为左右并排显示，不再上下排列。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.7 - 2026-04-15 21:04</strong>
+              <div className="small">账户连接区按钮精简为保存配置与同步连接两个核心动作。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.6 - 2026-04-15 19:41</strong>
+              <div className="small">版本号与版本记录重做为一行纯文本，强制左右排布，不再使用块状样式。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.5 - 2026-04-15 19:40</strong>
+              <div className="small">版本号与版本记录改为同一行的纯文字关系，去掉按钮块与横条感。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.4 - 2026-04-15 19:34</strong>
+              <div className="small">版本号与版本记录改为并列排放，去掉上下堆叠造成的拥挤感。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.3 - 2026-04-15 19:32</strong>
+              <div className="small">版本记录继续缩小并移动到版本号右侧，去掉居中横条感。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.2 - 2026-04-15 19:29</strong>
+              <div className="small">版本记录移动到标题右侧，账户总览右上角去掉“连接状态”文案，仅保留状态值与 Key。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.1 - 2026-04-15 19:28</strong>
+              <div className="small">版本记录入口改为更小的顶部行内链接，并去掉顶部重复的连接状态显示。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.4.0 - 2026-04-15 19:20</strong>
+              <div className="small">首屏继续压缩，收紧状态条、弱化提示卡，并移除真实盘口模式的大介绍卡。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.3.9 - 2026-04-15 18:25</strong>
+              <div className="small">实时策略页新增市场状态、建议策略、风险状态和执行建议区，开始向策略调度台靠拢。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.3.7 - 2026-04-15 14:34</strong>
+              <div className="small">更新日志改成顶部小入口，避免大面板长期占据主界面。</div>
+            </div>
+            <div className="changelogItem">
+              <strong>v0.3.6 - 2026-04-15 14:20</strong>
+              <div className="small">删除顶部第一栏中的可用余额、状态、模式、标的四个信息块，让页面头部更干净。</div>
+            </div>
             <div className="changelogItem">
               <strong>v0.3.5 - 2026-04-15 13:24</strong>
               <div className="small">趋势跟随策略接入真实回测逻辑，回测接口开始支持 strategyType 参数。</div>
@@ -547,35 +590,12 @@ export default function HomePage() {
               <div className="small">策略回测页新增策略类型选择器和候选策略卡，开始为趋势跟随、均值回归、突破策略预留扩展位。</div>
             </div>
             <div className="changelogItem">
-              <strong>v0.3.3 - 2026-04-14 23:01</strong>
-              <div className="small">实时策略页升级为独立执行界面骨架，新增执行总览、实时信号、执行日志三块区域。</div>
-            </div>
-            <div className="changelogItem">
-              <strong>v0.3.2 - 2026-04-14 22:45</strong>
-              <div className="small">页面内新增可展开更新日志面板，方便直接查看迭代记录。</div>
-            </div>
-            <div className="changelogItem">
-              <strong>v0.3.1 - 2026-04-14 22:37</strong>
-              <div className="small">修复三模式串页，修正桌面端显示逻辑，更新页面版本标记。</div>
-            </div>
-            <div className="changelogItem">
-              <strong>v0.3.0 - 2026-04-14 22:29</strong>
-              <div className="small">真实盘口整理为账户 / 持仓 / 委托三段式结构。</div>
-            </div>
-            <div className="changelogItem">
-              <strong>v0.2.8 - 2026-04-14 22:18</strong>
-              <div className="small">明确分离真实盘口、策略回测、实时策略三种页面职责。</div>
-            </div>
-            <div className="changelogItem">
               <strong>完整日志</strong>
               <div className="small">查看文件：okx-trader-sim/CHANGELOG.md</div>
             </div>
           </div>
-        ) : null}
-      </section>
-
-      {message ? <div className="card flashCard" style={{ marginBottom: 16 }}>{message}</div> : null}
-      {error ? <div className="card bad" style={{ marginBottom: 16 }}>{error}</div> : null}
+        </section>
+      ) : null}
 
       <nav className="mobileTabs appModeTabs">
         <button className={appMode === 'market' ? 'mobileTab active' : 'mobileTab'} onClick={() => setAppMode('market')}>真实盘口</button>
@@ -584,13 +604,8 @@ export default function HomePage() {
       </nav>
 
       <div className="mobileSection" data-tab="account" data-active={appMode === 'market'}>
-        <section className="card pageModeIntroCard" style={{ marginTop: 16 }}>
-          <div className="sectionTag">真实盘口</div>
-          <h2 style={{ marginTop: 0 }}>真实盘口操作界面</h2>
-          <div className="small">只看账户资金、持仓、委托和连接状态，不混入回测结果。</div>
-        </section>
         <section className="card panelCard marketModeHeroCard" style={{ marginTop: 16 }}>
-          <div className="panelHeader"><div><div className="sectionTag">账户总览</div><h2>账户 / 持仓 / 委托</h2></div></div>
+          <div className="panelHeader marketHeroHeader"><div><div className="sectionTag">账户总览</div><h2>账户 / 持仓 / 委托</h2></div><div className="compactStatusInline compactStatusPills marketHeroStatus"><span><strong className={loading ? '' : 'good'}>{loading ? '加载中' : '已连接'}</strong></span><span>Key <strong>{maskedApiKey}</strong></span></div></div>
           <div className="modeHeroStats">
             <div className="heroStatBox">
               <span>账户权益</span>
@@ -621,16 +636,9 @@ export default function HomePage() {
           <input value={apiForm.passphrase} onChange={(e) => setApiForm({ ...apiForm, passphrase: e.target.value })} placeholder="okx-passphrase" type="password" />
           <div className="row" style={{ marginTop: 12 }}>
             <button onClick={saveApiConfig}>保存配置</button>
-            <button className="secondary" onClick={refreshState}>刷新本地状态</button>
+            <button className="secondary" onClick={() => syncLiveState(syncMode)}>同步连接</button>
           </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button onClick={() => syncLiveState('demo')}>同步模拟盘</button>
-            <button className="secondary" onClick={() => syncLiveState('live')}>同步真实盘</button>
-          </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button onClick={() => testConnection('demo')} disabled={testing}>{testing ? '测试中...' : '测试模拟盘连接'}</button>
-            <button className="secondary" onClick={() => testConnection('live')} disabled={testing}>{testing ? '测试中...' : '测试真实盘连接'}</button>
-          </div>
+          {(message || error) ? <div className={error ? 'card bad compactNoticeCard' : 'card flashCard compactNoticeCard'} style={{ marginTop: 12 }}>{error || message}</div> : null}
         </section>
 
         <section className="card panelCard marketOverviewCard">
@@ -1348,10 +1356,11 @@ export default function HomePage() {
       <div className="grid modePageGrid realtimeModeGrid" style={{ marginTop: 16 }}>
         <section className="card panelCard realtimeControlCard">
           <div className="panelHeader"><div><div className="sectionTag">执行控制</div><h2>实时执行控制</h2></div></div>
-          <div className="small">后续这里会接启动、暂停、策略切换、风险停止等操作。</div>
-          <div className="statusRow" style={{ marginTop: 16 }}><span className="small">当前策略</span><strong>{strategyType === 'buy-sell' ? '买入 / 卖出' : strategyType === 'trend' ? '趋势跟随' : strategyType === 'mean-reversion' ? '均值回归' : '突破策略'}</strong></div>
+          <div className="small">开始把实时策略页做成策略调度台，而不只是展示页。</div>
+          <div className="statusRow" style={{ marginTop: 16 }}><span className="small">当前策略</span><strong>{currentStrategyLabel}</strong></div>
           <div className="statusRow"><span className="small">当前参数</span><strong>{strategyForm.stopLossPct}% / {strategyForm.trailingDrawdownPct}%</strong></div>
           <div className="statusRow"><span className="small">参考较优组合</span><strong>{bestBacktest ? `${bestBacktest.stopLossPct}% / ${bestBacktest.trailingDrawdownPct}%` : '-'}</strong></div>
+          <div className="statusRow"><span className="small">建议执行</span><strong>{state.strategyStatus === 'running' ? '保持监控' : '等待启动'}</strong></div>
           <div className="row" style={{ marginTop: 16 }}>
             <button>启动策略</button>
             <button className="secondary">暂停策略</button>
@@ -1359,16 +1368,32 @@ export default function HomePage() {
         </section>
 
         <section className="card panelCard realtimeSignalCard">
-          <div className="panelHeader"><div><div className="sectionTag">实时信号</div><h2>信号与仓位状态</h2></div></div>
-          <div className="small">后续这里接实时行情、持仓方向、开仓价格、浮盈浮亏和最近一次信号。</div>
+          <div className="panelHeader"><div><div className="sectionTag">实时信号</div><h2>市场状态与执行建议</h2></div></div>
+          <div className="small">这里开始承载市场状态判断、策略建议、风险状态和当前执行建议。</div>
           <div className="modeHeroStats" style={{ marginTop: 16 }}>
+            <div className="heroStatBox">
+              <span>市场状态</span>
+              <strong>{marketStateLabel}</strong>
+            </div>
+            <div className="heroStatBox">
+              <span>建议策略</span>
+              <strong>{suggestedStrategyLabel}</strong>
+            </div>
+            <div className="heroStatBox">
+              <span>风险状态</span>
+              <strong>{riskStateLabel}</strong>
+            </div>
             <div className="heroStatBox">
               <span>当前持仓</span>
               <strong>{state.positions.length}</strong>
             </div>
-            <div className="heroStatBox">
-              <span>浮动盈亏</span>
-              <strong>{formatNumber(state.positions.reduce((sum, p) => sum + Number(p.unrealizedPnl ?? 0), 0), 4)}</strong>
+          </div>
+          <div className="realtimeDecisionBox">
+            <div className="small">执行建议</div>
+            <strong>{executionAdvice}</strong>
+            <div className="realtimeDecisionMeta">
+              <span>浮动盈亏 {formatNumber(state.positions.reduce((sum, p) => sum + Number(p.unrealizedPnl ?? 0), 0), 4)}</span>
+              <span>当前信号 {strategyForm.lastSignal === 'buy' ? '买入' : strategyForm.lastSignal === 'sell' ? '卖出' : '观望'}</span>
             </div>
           </div>
         </section>
