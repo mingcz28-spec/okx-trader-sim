@@ -1,2 +1,2 @@
-[phases.setup]
-nixPkgs = ["nodejs_20"]
+# Deprecated for Railway deployment.
+# Railway now uses Dockerfile for this project.

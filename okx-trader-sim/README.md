@@ -95,12 +95,8 @@ Railway 使用单服务部署：
 
 1. 在 Railway 创建 MongoDB 服务。
 2. 创建 Web Service 并连接本 repo。
-3. 保留根目录的 `railway.json` 和 `nixpacks.toml`。
-4. 部署命令会启动：
-
-```bash
-dotnet out/OkxTraderSim.Api.dll
-```
+3. 保留根目录的 `Dockerfile`、`.dockerignore`、`railway.json`。
+4. Railway 使用 Dockerfile 构建并启动应用。
 
 ### Railway 环境变量
 
@@ -169,7 +165,7 @@ npm run build:backend
 模拟 Railway 构建：
 
 ```bash
-npm run build:railway
+docker build -t okx-trader-sim .
 ```
 
 ## API 摘要

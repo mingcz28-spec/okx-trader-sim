@@ -79,22 +79,20 @@ dotnet out/OkxTraderSim.Api.dll
 
 ### 2. 需要保留的文件
 仓库根目录应保留：
+- `Dockerfile`
+- `.dockerignore`
 - `railway.json`
-- `nixpacks.toml`
-- `scripts/copy-frontend-dist.mjs`
 
 ### 3. Railway 构建流程
-Nixpacks 会执行：
-```bash
-npm --prefix frontend ci
-npm --prefix frontend run build
-dotnet publish backend/OkxTraderSim.Api.csproj -c Release -o out
-node scripts/copy-frontend-dist.mjs
-```
+Railway 现在使用 Dockerfile 构建：
+- 第 1 阶段构建前端 `frontend/dist`
+- 第 2 阶段发布后端到运行目录
+- 第 3 阶段把前端静态文件复制到 `wwwroot`
+- 最终由 ASP.NET Core 同时提供前端和 `/api/*`
 
-启动命令：
+容器启动命令：
 ```bash
-dotnet out/OkxTraderSim.Api.dll
+dotnet OkxTraderSim.Api.dll
 ```
 
 ### 4. Railway 环境变量
@@ -128,3 +126,10 @@ dotnet out/OkxTraderSim.Api.dll
 - `DEPLOYMENT.md`
 
 这样既能本地部署，也能直接上 Railway。
+
+## 五、Railway 改为 Dockerfile 的原因
+
+如果 Railway 在 `NIXPACKS` / `Railpack` 阶段报：
+- `Error creating build plan with Railpack`
+
+则优先使用当前仓库内的 Dockerfile 部署方案，兼容性更稳。
