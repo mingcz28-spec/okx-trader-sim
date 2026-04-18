@@ -7,7 +7,8 @@ export function EquityCurve({ trades }: { trades: BacktestTradePoint[] }) {
   const pad = 44;
   const series = trades.reduce<Array<{ index: number; equity: number }>>((acc, trade, index) => {
     const previous = acc.length ? acc[acc.length - 1].equity : 1;
-    acc.push({ index: index + 1, equity: previous * (1 + trade.ret) });
+    const stepReturn = trade.netRet ?? trade.ret;
+    acc.push({ index: index + 1, equity: previous * (1 + stepReturn) });
     return acc;
   }, []);
 

@@ -33,6 +33,21 @@ public sealed class OkxSyncService
         };
     }
 
+    public async Task<OkxAccountConfigDto> GetAccountConfigAsync(string mode)
+    {
+        mode = NormalizeMode(mode);
+        var response = await _client.GetAccountConfigAsync(mode);
+        if (response.Code != "0") throw new InvalidOperationException(response.Msg);
+
+        var data = response.Data.FirstOrDefault();
+        return new OkxAccountConfigDto(
+            data?.PosMode ?? "unknown",
+            mode == "live",
+            data?.AcctLv ?? "unknown",
+            "cross",
+            mode);
+    }
+
     public async Task<OrderBookDto> GetOrderBookAsync(string instId, int size)
     {
         instId = string.IsNullOrWhiteSpace(instId) ? "BTC-USDT-SWAP" : instId.Trim().ToUpperInvariant();
@@ -98,7 +113,7 @@ public sealed class OkxSyncService
         }).ToList();
         await _repository.ReplacePositionsAsync(positions);
 
-        state.DailyPnl = Math.Round(positions.Sum(x => x.Notional * x.PnlPct / 100m), 2);
+        state.DailyPnl = Math.Round(positions.Sum(x => x.UnrealizedPnl ?? 0m), 2);
         state.DrawdownPct = positions.Count == 0 ? 0m : Math.Min(0m, positions.Min(x => x.PnlPct));
         state.StrategyStatus = positions.Count == 0 ? "idle" : "running";
         await _repository.SaveAppStateAsync(state);

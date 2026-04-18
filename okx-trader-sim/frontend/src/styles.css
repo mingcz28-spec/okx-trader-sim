@@ -159,6 +159,11 @@ h2 {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
 }
 
+.backtestFlow {
+  display: grid;
+  gap: 16px;
+}
+
 .panel {
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(81, 101, 85, 0.14);
@@ -177,6 +182,161 @@ h2 {
   gap: 14px;
   justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.compactHeader {
+  margin-top: 18px;
+}
+
+.strategyGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.strategyOption {
+  background: #f6f8f3;
+  border: 1px solid #dbe5d8;
+  border-radius: 8px;
+  color: #1d211f;
+  display: grid;
+  gap: 12px;
+  min-height: 146px;
+  padding: 16px;
+  text-align: left;
+}
+
+.strategyOption:hover:not(:disabled),
+.strategyOption.active {
+  background: #e4f3e8;
+  border-color: #28784f;
+}
+
+.strategyOption:disabled {
+  background: #f1f3ef;
+  color: #7a857d;
+  opacity: 0.8;
+}
+
+.strategyOptionTop {
+  align-items: start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.strategyOptionTop strong {
+  font-size: 18px;
+}
+
+.strategyOption > span:last-child {
+  color: #56635b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.strategyStatusPill {
+  border-radius: 8px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.strategyStatusPill.ready {
+  background: #28784f;
+  color: #fff;
+}
+
+.strategyStatusPill.pending {
+  background: #e1e8dd;
+  color: #56635b;
+}
+
+.parameterLayout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+}
+
+.parameterForm,
+.bestParameterBox {
+  background: #f6f8f3;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.metricMiniGrid,
+.resultSummaryStrip,
+.analysisGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.metricMiniGrid {
+  grid-template-columns: repeat(2, 1fr);
+  margin-top: 12px;
+}
+
+.resultSummaryStrip {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 18px;
+}
+
+.metricMiniGrid > div,
+.resultSummaryStrip > div,
+.analysisGrid > div {
+  background: #f6f8f3;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.metricMiniGrid span,
+.resultSummaryStrip span,
+.analysisGrid span {
+  color: #647067;
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.metricMiniGrid strong,
+.resultSummaryStrip strong,
+.analysisGrid strong {
+  display: block;
+  font-size: 20px;
+  margin-top: 4px;
+}
+
+.candidateList {
+  margin-top: 18px;
+}
+
+.selectedRow {
+  background: #eef8f1;
+}
+
+.resultCharts {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.resultCharts > div,
+.analysisBlock {
+  border-top: 1px solid #e1e8dd;
+  padding-top: 18px;
+}
+
+.analysisGrid {
+  grid-template-columns: repeat(5, 1fr);
+  margin-top: 12px;
+}
+
+.analysisComment {
+  grid-column: span 5;
 }
 
 .loginStatus {
@@ -266,6 +426,45 @@ select {
   padding: 18px;
 }
 
+.emptyState.compact {
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.suggestionList {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 12px 0 18px;
+}
+
+.suggestionItem {
+  background: #f6f8f3;
+  border: 1px solid #dbe5d8;
+  color: #1d211f;
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  text-align: left;
+}
+
+.suggestionItem:hover {
+  background: #e4f3e8;
+  border-color: #28784f;
+}
+
+.suggestionItem span {
+  color: #647067;
+  font-size: 12px;
+}
+
+.confirmationBox {
+  background: #f6f8f3;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  padding: 16px;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;
@@ -320,21 +519,22 @@ th {
   stroke: #b42323;
 }
 
-.tradeEntry {
-  fill: #f2b84b;
+.tradeLong,
+.tradeShort,
+.tradeClose {
   stroke: #1d211f;
 }
 
-.tradeExit {
-  stroke: #1d211f;
+.tradeLong {
+  fill: #b42323;
 }
 
-.goodDot {
+.tradeShort {
   fill: #168449;
 }
 
-.badDot {
-  fill: #b42323;
+.tradeClose {
+  fill: #f2b84b;
 }
 
 .equityPath {
@@ -381,40 +581,8 @@ th {
   margin-top: 4px;
 }
 
-.orderBookGrid {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.orderBookTitle,
-.orderBookMeta {
-  color: #56635b;
-  font-size: 12px;
-  font-weight: 800;
-  margin-bottom: 6px;
-}
-
-.orderBookRow {
-  display: grid;
-  font-variant-numeric: tabular-nums;
-  gap: 8px;
-  grid-template-columns: 1.2fr 1fr 48px;
-  padding: 5px 0;
-}
-
-.orderBookRow span:nth-child(2),
-.orderBookRow span:nth-child(3) {
-  color: #647067;
-  text-align: right;
-}
-
-.orderBookRow.ask span:first-child {
-  color: #b42323;
-}
-
-.orderBookRow.bid span:first-child {
-  color: #168449;
+.assetDetailTable {
+  margin-top: 18px;
 }
 
 @media (max-width: 860px) {
@@ -431,9 +599,18 @@ th {
   .modeTabs,
   .metricStrip,
   .consoleGrid,
+  .strategyGrid,
+  .suggestionList,
+  .parameterLayout,
+  .resultSummaryStrip,
+  .analysisGrid,
   .pageGrid,
   .formGrid {
     grid-template-columns: 1fr;
+  }
+
+  .analysisComment {
+    grid-column: auto;
   }
 
   .modeTabs {

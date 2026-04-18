@@ -4,10 +4,16 @@ import type {
   AppState,
   BacktestBar,
   BacktestSummary,
+  ConfirmRealtimeSessionPayload,
+  InstrumentSuggestion,
+  LiveRealtimeSessionPayload,
+  OkxAccountConfig,
   OrderBook,
+  RealtimeConsole,
+  RealtimeWorkspace,
   RiskConfig,
-  StrategyDefinition,
   StrategyConfig,
+  StrategyDefinition,
   StrategyType,
 } from '../types';
 
@@ -41,6 +47,8 @@ export const api = {
     envelope<ApiConnectionSummary>('/api/config/okx', { method: 'POST', body: JSON.stringify(payload) }),
   testOkxConnection: (mode: 'demo' | 'live') =>
     envelope<{ mode: string; totalEq: number; availableBalance: number }>('/api/okx/test-connection', { method: 'POST', body: JSON.stringify({ mode }) }),
+  getOkxAccountConfig: (mode: 'demo' | 'live' = 'live') =>
+    envelope<OkxAccountConfig>(`/api/okx/account-config?mode=${mode}`),
   syncOkx: (mode: 'demo' | 'live') =>
     envelope<AppState>('/api/okx/sync', { method: 'POST', body: JSON.stringify({ mode }) }),
   getOrderBook: (instId: string, size = 20) =>
@@ -55,8 +63,25 @@ export const api = {
   getStrategies: () => envelope<StrategyDefinition[]>('/api/strategies'),
   runBacktest: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType }) =>
     envelope<BacktestSummary>('/api/backtests', { method: 'POST', body: JSON.stringify(payload) }),
-  loadBacktestDetail: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType; stopLossPct: number; trailingDrawdownPct: number }) =>
+  loadBacktestDetail: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType; stopLossPct: number; trailingDrawdownPct: number; leverage: number }) =>
     envelope<BacktestSummary>('/api/backtests/detail', { method: 'POST', body: JSON.stringify(payload) }),
-  getRealtimeConsole: () =>
-    envelope<{ strategyType: StrategyType; strategyName: string; strategyStatusLabel: string; strategyStatus: string; lastSignal: string; stopLossPct: number; trailingDrawdownPct: number; riskState: string; executionAdvice: string; positionCount: number; logs: string[] }>('/api/realtime/console'),
+  getRealtimeConsole: () => envelope<RealtimeConsole>('/api/realtime/console'),
+  searchRealtimeInstruments: (query: string) =>
+    envelope<InstrumentSuggestion[]>(`/api/realtime/instruments?q=${encodeURIComponent(query)}`),
+  getRealtimeWorkspace: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType; confirmed?: boolean }) =>
+    envelope<RealtimeWorkspace>(`/api/realtime/workspace?instId=${encodeURIComponent(payload.instId)}&bar=${encodeURIComponent(payload.bar)}&strategyType=${encodeURIComponent(payload.strategyType)}&confirmed=${payload.confirmed ? 'true' : 'false'}`),
+  confirmRealtimeSession: (payload: ConfirmRealtimeSessionPayload) =>
+    envelope<RealtimeWorkspace>('/api/realtime/session', { method: 'PUT', body: JSON.stringify(payload) }),
+  forceExitRealtimeSession: () =>
+    envelope<RealtimeWorkspace>('/api/realtime/session/force-exit', { method: 'PUT' }),
+  putLiveRealtimeSession: (payload: LiveRealtimeSessionPayload) =>
+    envelope<RealtimeWorkspace>('/api/realtime/live-session', { method: 'PUT', body: JSON.stringify(payload) }),
+  pauseLiveRealtimeSession: () =>
+    envelope<RealtimeWorkspace>('/api/realtime/live-session/pause', { method: 'PUT' }),
+  resumeLiveRealtimeSession: () =>
+    envelope<RealtimeWorkspace>('/api/realtime/live-session/resume', { method: 'PUT' }),
+  forceExitLiveRealtimeSession: () =>
+    envelope<RealtimeWorkspace>('/api/realtime/live-session/force-exit', { method: 'PUT' }),
+  deleteLiveRealtimeSession: () =>
+    envelope<RealtimeWorkspace>('/api/realtime/live-session', { method: 'DELETE' }),
 };

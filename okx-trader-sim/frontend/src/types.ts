@@ -1,3 +1,8 @@
+export type StrategyType = 'buy-sell' | 'trend' | 'mean-reversion' | 'breakout';
+export type BacktestBar = '1m' | '5m' | '15m' | '1H' | '4H' | '1D';
+export type RealtimeAction = 'open_long' | 'open_short' | 'close' | 'force_close' | 'hold';
+export type PositionSide = 'long' | 'short' | 'flat';
+
 export type ApiConnectionSummary = {
   apiKeyMasked: string;
   hasApiKey: boolean;
@@ -16,9 +21,10 @@ export type StrategyConfig = {
   entrySide: 'buy';
   stopLossPct: number;
   trailingDrawdownPct: number;
+  leverage: number;
   highestPriceSinceEntry?: number | null;
   entryPrice?: number | null;
-  lastSignal: 'buy' | 'sell' | 'hold';
+  lastSignal: string;
 };
 
 export type Position = {
@@ -59,10 +65,14 @@ export type OrderHistoryItem = {
 export type BacktestResult = {
   stopLossPct: number;
   trailingDrawdownPct: number;
+  leverage: number;
   trades: number;
   winRate: number;
   totalReturn: number;
   maxDrawdown: number;
+  grossTotalReturn: number;
+  netTotalReturn: number;
+  feeCost: number;
 };
 
 export type CandlePoint = {
@@ -93,7 +103,21 @@ export type BacktestTradePoint = {
   exitTs: number;
   exitPrice: number;
   ret: number;
-  reason: 'stop_loss' | 'trailing_exit';
+  reason: string;
+  side: 'long' | 'short';
+  grossRet: number;
+  netRet: number;
+  leverage: number;
+  feeCost: number;
+  entryFeeRate: number;
+  exitFeeRate: number;
+  orderId?: string | null;
+  executionMode?: 'simulated' | 'live';
+  requestedAction?: string | null;
+  executedSide?: string | null;
+  executedPrice?: number | null;
+  executedSize?: number | null;
+  exchangeState?: string | null;
 };
 
 export type BacktestSummary = {
@@ -109,6 +133,31 @@ export type BacktestSummary = {
   tradePoints: BacktestTradePoint[];
 };
 
+export type StrategyParameterSet = {
+  stopLossPct: number;
+  trailingDrawdownPct: number;
+  leverage: number;
+};
+
+export type StrategyParameter = {
+  id: string;
+  label: string;
+  description: string;
+  value: number;
+  unit: string;
+};
+
+export type ConfirmRealtimeSessionPayload = {
+  instId: string;
+  bar: BacktestBar;
+  strategyType: StrategyType;
+  stopLossPct: number;
+  trailingDrawdownPct: number;
+  leverage: number;
+};
+
+export type LiveRealtimeSessionPayload = ConfirmRealtimeSessionPayload;
+
 export type StrategyDefinition = {
   id: StrategyType;
   name: string;
@@ -116,6 +165,180 @@ export type StrategyDefinition = {
   status: 'active' | 'pending';
   supportsBacktest: boolean;
   supportsRealtime: boolean;
+  defaultParams: StrategyParameterSet;
+  parameters: StrategyParameter[];
+};
+
+export type InstrumentSuggestion = {
+  instId: string;
+  baseCcy: string;
+  quoteCcy: string;
+  instType: string;
+  state: string;
+};
+
+export type RealtimeConsole = {
+  strategyType: StrategyType;
+  strategyName: string;
+  strategyStatusLabel: string;
+  strategyStatus: 'idle' | 'running' | 'paused';
+  enabled: boolean;
+  symbol: string;
+  lastPrice?: number | null;
+  candleCount: number;
+  hasPosition: boolean;
+  entryPrice?: number | null;
+  lastSignal: RealtimeAction | string;
+  stopLossPct: number;
+  trailingDrawdownPct: number;
+  leverage: number;
+  riskState: string;
+  executionAdvice: string;
+  positionCount: number;
+  marketNote?: string | null;
+  updatedAt: string;
+  logs: string[];
+};
+
+export type RealtimeSession = {
+  sessionId: string;
+  mode: 'simulated' | 'live';
+  instId: string;
+  bar: BacktestBar;
+  strategyType: StrategyType;
+  params: StrategyParameterSet;
+  paramsSource: string;
+  startedAt: string;
+  status: string;
+  positionSide: PositionSide;
+  entryPrice?: number | null;
+  entryTs?: number | null;
+  peakPrice?: number | null;
+  troughPrice?: number | null;
+  positionSize?: number | null;
+  allocatedCapital?: number | null;
+  entryNotionalUsd?: number | null;
+  lastSettledCandleTs?: number | null;
+  lastOrderId?: string | null;
+  lastExecutionPrice?: number | null;
+  lastExecutionTs?: number | null;
+  lastExecutionSize?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+};
+
+export type RealtimeLiveSession = {
+  sessionId: string;
+  mode: 'simulated' | 'live';
+  instId: string;
+  bar: BacktestBar;
+  strategyType: StrategyType;
+  params: StrategyParameterSet;
+  paramsSource: string;
+  startedAt: string;
+  status: string;
+  positionSide: PositionSide;
+  entryPrice?: number | null;
+  entryTs?: number | null;
+  positionSize?: number | null;
+  allocatedCapital?: number | null;
+  entryNotionalUsd?: number | null;
+  lastSettledCandleTs?: number | null;
+  lastSignal: RealtimeAction | string;
+  signalReason: string;
+  lastOrderId?: string | null;
+  lastExecutionPrice?: number | null;
+  lastExecutionTs?: number | null;
+  lastExecutionSize?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  summary?: BacktestResult | null;
+  tradePoints: BacktestTradePoint[];
+  lastTrade?: BacktestTradePoint | null;
+  lastEvaluation?: RealtimePeriodEvaluation | null;
+};
+
+export type RealtimePeriodEvaluation = {
+  ts: number;
+  close: number;
+  action: RealtimeAction;
+  positionSide: PositionSide;
+  executionPrice?: number | null;
+  reason: string;
+  positionStatus: string;
+  periodReturn: number;
+  realizedReturn: number;
+  unrealizedReturn: number;
+  totalReturn: number;
+  grossReturn: number;
+  netReturn: number;
+  feeCost: number;
+  entryFeeRate: number;
+  exitFeeRate: number;
+  equity: number;
+};
+
+export type RealtimeSimulation = {
+  summary?: BacktestResult | null;
+  candles: CandlePoint[];
+  tradePoints: BacktestTradePoint[];
+  strategyParams: StrategyParameterSet;
+  parameterDefinitions: StrategyParameter[];
+  periodEvaluations: RealtimePeriodEvaluation[];
+  equityCurve: number[];
+  realizedReturn: number;
+  unrealizedReturn: number;
+  positionStatus: string;
+  openEntryPrice?: number | null;
+  openEntryTs?: number | null;
+  lastTradeReturn?: number | null;
+  lastSignal: RealtimeAction | string;
+  signalReason: string;
+  buyPoints: number;
+  sellPoints: number;
+  paramsSource: string;
+  hasSelectedParams: boolean;
+  isConfirmed: boolean;
+};
+
+export type RealtimeLive = {
+  connectionStatus: string;
+  confirmationStatus: string;
+  signal: RealtimeAction | string;
+  signalReason: string;
+  triggeredAt: string;
+  triggerPrice?: number | null;
+  positionCount: number;
+  riskNote: string;
+  hasAccountConnection: boolean;
+};
+
+export type RealtimeWorkspace = {
+  instId: string;
+  bar: BacktestBar;
+  selectedStrategyType: StrategyType;
+  pendingStrategyType?: StrategyType | null;
+  confirmedStrategyType?: StrategyType | null;
+  confirmedSession?: RealtimeSession | null;
+  liveSession?: RealtimeLiveSession | null;
+  strategyParams: StrategyParameterSet;
+  paramsSource: string;
+  candles: CandlePoint[];
+  currentCandle?: CandlePoint | null;
+  latestPrice?: number | null;
+  lastClosedCandleTs?: number | null;
+  nextRefreshAt?: string | null;
+  updatedAt: string;
+  simulation: RealtimeSimulation;
+  live: RealtimeLive;
+};
+
+export type OkxAccountConfig = {
+  positionMode: string;
+  canTrade: boolean;
+  accountLevel: string;
+  marginModeHint: string;
+  tradingMode: string;
 };
 
 export type AppState = {
@@ -133,9 +356,6 @@ export type AppState = {
   backtest?: BacktestSummary | null;
   positions: Position[];
 };
-
-export type StrategyType = 'buy-sell' | 'trend' | 'mean-reversion' | 'breakout';
-export type BacktestBar = '1m' | '5m' | '15m' | '1H' | '4H' | '1D';
 
 export type ApiEnvelope<T> = {
   ok: boolean;

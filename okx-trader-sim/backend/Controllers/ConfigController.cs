@@ -17,8 +17,15 @@ public sealed class ConfigController : ControllerBase
     [HttpPost("api/config/okx")]
     public async Task<ActionResult<ApiEnvelope<ApiConnectionSummaryDto>>> SaveOkxConfig(SaveOkxConfigRequest request)
     {
-        var summary = await _service.SaveOkxConfigAsync(request);
-        return Ok(new ApiEnvelope<ApiConnectionSummaryDto>(true, summary));
+        try
+        {
+            var summary = await _service.SaveOkxConfigAsync(request);
+            return Ok(new ApiEnvelope<ApiConnectionSummaryDto>(true, summary));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiEnvelope<ApiConnectionSummaryDto>(false, null, ex.Message, "OKX_CONFIG_INVALID"));
+        }
     }
 
     [HttpGet("api/risk-config")]

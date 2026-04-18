@@ -4,6 +4,9 @@ using OkxTraderSim.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(port))
 {
@@ -25,6 +28,7 @@ builder.Services.AddSingleton<StrategyRegistryService>();
 builder.Services.AddScoped<BacktestService>();
 builder.Services.AddScoped<OkxSyncService>();
 builder.Services.AddScoped<RealtimeService>();
+builder.Services.AddHostedService<RealtimeSettlementWorker>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

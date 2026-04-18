@@ -19,6 +19,11 @@ public sealed class ConfigService
 
     public async Task<ApiConnectionSummaryDto> SaveOkxConfigAsync(SaveOkxConfigRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.ApiKey) || string.IsNullOrWhiteSpace(request.SecretKey) || string.IsNullOrWhiteSpace(request.Passphrase))
+        {
+            throw new ArgumentException("请填写完整的 OKX API Key、Secret Key 和 Passphrase。");
+        }
+
         var doc = new ApiConnectionDocument
         {
             ApiKey = request.ApiKey.Trim(),
@@ -49,7 +54,7 @@ public sealed class ConfigService
 
     public async Task<StrategyConfigDto> SaveStrategyConfigAsync(StrategyConfigDto dto)
     {
-        var signal = dto.LastSignal is "buy" or "sell" or "hold" ? dto.LastSignal : "hold";
+        var signal = dto.LastSignal is "open_long" or "open_short" or "close" or "force_close" or "hold" ? dto.LastSignal : "hold";
         var doc = new StrategyConfigDocument
         {
             StrategyType = _strategyRegistry.NormalizeStrategyId(dto.StrategyType),
@@ -57,6 +62,7 @@ public sealed class ConfigService
             EntrySide = "buy",
             StopLossPct = dto.StopLossPct,
             TrailingDrawdownPct = dto.TrailingDrawdownPct,
+            Leverage = dto.Leverage,
             HighestPriceSinceEntry = dto.HighestPriceSinceEntry,
             EntryPrice = dto.EntryPrice,
             LastSignal = signal

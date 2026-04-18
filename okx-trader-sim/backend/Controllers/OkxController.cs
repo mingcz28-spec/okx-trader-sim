@@ -29,6 +29,20 @@ public sealed class OkxController : ControllerBase
         }
     }
 
+    [HttpGet("account-config")]
+    public async Task<ActionResult<ApiEnvelope<OkxAccountConfigDto>>> GetAccountConfig([FromQuery] string? mode)
+    {
+        try
+        {
+            var result = await _service.GetAccountConfigAsync(mode ?? "live");
+            return Ok(new ApiEnvelope<OkxAccountConfigDto>(true, result));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiEnvelope<OkxAccountConfigDto>(false, null, ex.Message, "OKX_ACCOUNT_CONFIG_FAILED"));
+        }
+    }
+
     [HttpPost("sync")]
     public async Task<ActionResult<ApiEnvelope<AppStateDto>>> Sync(OkxModeRequest request)
     {

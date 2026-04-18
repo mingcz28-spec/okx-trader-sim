@@ -141,6 +141,33 @@ public sealed class AppRepository
         await _db.Backtests.ReplaceOneAsync(x => x.Id == backtest.Id, backtest);
     }
 
+    public async Task<RealtimeSessionDocument?> GetRealtimeSessionAsync() =>
+        await _db.RealtimeSessions.Find(x => x.Id == DocumentIds.Default && x.Mode == "simulated").FirstOrDefaultAsync();
+
+    public async Task<RealtimeSessionDocument?> GetLiveRealtimeSessionAsync() =>
+        await _db.RealtimeSessions.Find(x => x.Id == "live-default" && x.Mode == "live").FirstOrDefaultAsync();
+
+    public Task SaveRealtimeSessionAsync(RealtimeSessionDocument session)
+    {
+        session.Mode = "simulated";
+        session.Id = DocumentIds.Default;
+        session.SessionId = DocumentIds.Default;
+        session.UpdatedAt = DateTime.UtcNow;
+        return _db.RealtimeSessions.ReplaceOneAsync(x => x.Id == session.Id, session, new ReplaceOptions { IsUpsert = true });
+    }
+
+    public Task SaveLiveRealtimeSessionAsync(RealtimeSessionDocument session)
+    {
+        session.Mode = "live";
+        session.SessionId = "live-default";
+        session.Id = "live-default";
+        session.UpdatedAt = DateTime.UtcNow;
+        return _db.RealtimeSessions.ReplaceOneAsync(x => x.Id == session.Id, session, new ReplaceOptions { IsUpsert = true });
+    }
+
+    public Task DeleteLiveRealtimeSessionAsync() =>
+        _db.RealtimeSessions.DeleteOneAsync(x => x.Id == "live-default" && x.Mode == "live");
+
     private async Task SeedDefaultsAsync()
     {
         if (await _db.Balances.CountDocumentsAsync(_ => true) == 0)

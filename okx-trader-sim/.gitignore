@@ -8,3 +8,6 @@ frontend/dist
 backend/bin
 backend/obj
 out
+*.log
+*.tsbuildinfo
+tmp-online*.html
