@@ -131,12 +131,17 @@ public sealed class RealtimeSessionDocument
     public decimal StopLossPct { get; set; } = 1m;
     public decimal TrailingDrawdownPct { get; set; } = 2m;
     public decimal Leverage { get; set; } = 3m;
+    public bool AutoOptimizeParameters { get; set; }
     public string ParamsSource { get; set; } = "module-default";
+    public BacktestResultDto? LastOptimizationResult { get; set; }
+    public string? LastOptimizationReason { get; set; }
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "running";
     public string PositionSide { get; set; } = "flat";
     public decimal? EntryPrice { get; set; }
     public long? EntryTs { get; set; }
+    public decimal? ExecutionEntryPrice { get; set; }
+    public long? ExecutionEntryTs { get; set; }
     public decimal? PeakPrice { get; set; }
     public decimal? TroughPrice { get; set; }
     public decimal? PositionSize { get; set; }
@@ -210,6 +215,9 @@ public sealed record RealtimeSessionDto(
     string Bar,
     string StrategyType,
     StrategyParameterSetDto Params,
+    bool AutoOptimizeParameters,
+    BacktestResultDto? LastOptimizationResult,
+    string? LastOptimizationReason,
     string ParamsSource,
     DateTime StartedAt,
     string Status,
@@ -235,6 +243,9 @@ public sealed record RealtimeLiveSessionDto(
     string Bar,
     string StrategyType,
     StrategyParameterSetDto Params,
+    bool AutoOptimizeParameters,
+    BacktestResultDto? LastOptimizationResult,
+    string? LastOptimizationReason,
     string ParamsSource,
     DateTime StartedAt,
     string Status,
@@ -255,6 +266,7 @@ public sealed record RealtimeLiveSessionDto(
     string? ErrorMessage,
     BacktestResultDto? Summary,
     List<BacktestTradePointDto> TradePoints,
+    List<RealtimePeriodEvaluationDto> PeriodEvaluations,
     BacktestTradePointDto? LastTrade,
     RealtimePeriodEvaluationDto? LastEvaluation);
 public sealed record RealtimePeriodEvaluationDto(

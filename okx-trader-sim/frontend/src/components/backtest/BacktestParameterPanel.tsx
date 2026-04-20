@@ -75,7 +75,7 @@ export function BacktestParameterPanel({
               </select>
             </label>
             <label>止损 %<input type="number" min="0.01" step="0.01" value={stopLossPct} onChange={(e) => onStopLossChange(Number(e.target.value))} /></label>
-            <label>移动回撤 %<input type="number" min="0.01" step="0.01" value={trailingDrawdownPct} onChange={(e) => onTrailingChange(Number(e.target.value))} /></label>
+            <label>浮盈回撤 %<input type="number" min="0.01" step="0.01" value={trailingDrawdownPct} onChange={(e) => onTrailingChange(Number(e.target.value))} /></label>
             <label>杠杆 x<input type="number" min="1" step="1" value={leverage} onChange={(e) => onLeverageChange(Number(e.target.value))} /></label>
           </div>
 
@@ -93,7 +93,7 @@ export function BacktestParameterPanel({
           {bestResult ? (
             <div className="metricMiniGrid">
               <div><span>止损</span><strong>{bestResult.stopLossPct}%</strong></div>
-              <div><span>回撤</span><strong>{bestResult.trailingDrawdownPct}%</strong></div>
+              <div><span>浮盈回撤</span><strong>{bestResult.trailingDrawdownPct}%</strong></div>
               <div><span>杠杆</span><strong>{bestResult.leverage}x</strong></div>
               <div><span>净收益</span><strong className={bestResult.netTotalReturn >= 0 ? 'good' : 'bad'}>{formatPercent(bestResult.netTotalReturn)}</strong></div>
               <div><span>费率成本</span><strong>{formatPercent(bestResult.feeCost)}</strong></div>

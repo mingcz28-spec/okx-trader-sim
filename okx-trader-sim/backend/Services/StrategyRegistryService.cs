@@ -7,6 +7,7 @@ public sealed class StrategyRegistryService
     public const decimal DefaultLeverage = 3m;
     public const decimal DefaultTakerFeeRate = 0.0005m;
     public const decimal MaxLeveragedStopLossPct = 10m;
+    public const int BuySellMovingAveragePeriod = 20;
 
     private readonly IReadOnlyDictionary<string, ITradingStrategy> _activeStrategies;
     private readonly IReadOnlyList<StrategyDefinitionDto> _definitions;
@@ -66,6 +67,23 @@ public sealed class StrategyRegistryService
         }
     }
 
+    public static int ResolveBuySellMovingAverageTrend(IReadOnlyList<CandlePointDto> previousCandles)
+    {
+        if (previousCandles.Count < BuySellMovingAveragePeriod + 1) return 0;
+
+        var latestAverage = previousCandles
+            .TakeLast(BuySellMovingAveragePeriod)
+            .Average(x => x.Close);
+        var previousAverage = previousCandles
+            .Skip(previousCandles.Count - BuySellMovingAveragePeriod - 1)
+            .Take(BuySellMovingAveragePeriod)
+            .Average(x => x.Close);
+
+        if (latestAverage > previousAverage) return 1;
+        if (latestAverage < previousAverage) return -1;
+        return 0;
+    }
+
     private static StrategyDefinitionDto BuildPendingDefinition(string id, string name, string description)
     {
         var defaults = new StrategyParameterSetDto(1m, 2m, DefaultLeverage);
@@ -75,7 +93,7 @@ public sealed class StrategyRegistryService
     public static List<StrategyParameterDto> BuildParameterDefinitions(StrategyParameterSetDto values) =>
     [
         new("stopLossPct", "止损比例", "价格偏离入场价达到该比例时平仓。", values.StopLossPct, "%"),
-        new("trailingDrawdownPct", "移动回撤比例", "按结算价极值回撤达到该比例时平仓。", values.TrailingDrawdownPct, "%"),
+        new("trailingDrawdownPct", "浮盈回撤比例", "按开仓后最大浮盈的回吐比例平仓。", values.TrailingDrawdownPct, "%"),
         new("leverage", "策略杠杆", "收益按该杠杆放大，净收益同时计入双边 taker 费率。", values.Leverage, "x")
     ];
 }
@@ -177,10 +195,12 @@ internal abstract class TradingStrategyBase
         {
             var peakClose = Math.Max(context.PeakPrice ?? entry, context.Candle.Close);
             var stopPrice = entry * (1m - context.Params.StopLossPct / 100m);
-            var trailingPrice = peakClose * (1m - context.Params.TrailingDrawdownPct / 100m);
+            var maxProfit = peakClose - entry;
+            var currentProfit = context.Candle.Close - entry;
+            var profitDrawdown = maxProfit <= 0m ? 0m : (maxProfit - currentProfit) / maxProfit * 100m;
 
             if (context.Candle.Low <= stopPrice) return new(Close, "已收盘 K 线触发多单止损。", stopPrice);
-            if (context.Candle.Close <= trailingPrice) return new(Close, "已收盘 K 线触发多单移动回撤。", context.Candle.Close);
+            if (maxProfit > 0m && currentProfit > 0m && profitDrawdown >= context.Params.TrailingDrawdownPct) return new(Close, "已收盘 K 线触发多单浮盈回撤。", context.Candle.Close);
             return new(Hold, holdReason);
         }
 
@@ -188,10 +208,12 @@ internal abstract class TradingStrategyBase
         {
             var troughClose = Math.Min(context.TroughPrice ?? entry, context.Candle.Close);
             var stopPrice = entry * (1m + context.Params.StopLossPct / 100m);
-            var trailingPrice = troughClose * (1m + context.Params.TrailingDrawdownPct / 100m);
+            var maxProfit = entry - troughClose;
+            var currentProfit = entry - context.Candle.Close;
+            var profitDrawdown = maxProfit <= 0m ? 0m : (maxProfit - currentProfit) / maxProfit * 100m;
 
             if (context.Candle.High >= stopPrice) return new(Close, "已收盘 K 线触发空单止损。", stopPrice);
-            if (context.Candle.Close >= trailingPrice) return new(Close, "已收盘 K 线触发空单移动回撤。", context.Candle.Close);
+            if (maxProfit > 0m && currentProfit > 0m && profitDrawdown >= context.Params.TrailingDrawdownPct) return new(Close, "已收盘 K 线触发空单浮盈回撤。", context.Candle.Close);
             return new(Hold, holdReason);
         }
 
@@ -252,7 +274,8 @@ internal sealed class BuySellTradingStrategy : TradingStrategyBase, ITradingStra
 
     public BuySellTradingStrategy()
     {
-        Definition = BuildDefinition("buy-sell", "买入卖出策略", "空仓时读取前 3 根已收盘 close，递增开多，递减开空；平仓遵循止损与移动回撤。", DefaultParams);
+        Definition = BuildDefinition("buy-sell", "买入卖出策略", "空仓时读取前 3 根已收盘 close，递增开多，递减开空；平仓遵循止损与浮盈回撤。", DefaultParams);
+        Definition = BuildDefinition("buy-sell", "买入卖出策略", "空仓时使用过去 20 个已收盘点的均值曲线判断趋势，MA20 上行开多，MA20 下行开空；平仓遵循止损与浮盈回撤。", DefaultParams);
     }
 
     public StrategyBacktestResult RunBacktest(List<CandlePointDto> candles, decimal stopLossPct, decimal trailingDrawdownPct, decimal leverage)
@@ -347,6 +370,24 @@ internal sealed class BuySellTradingStrategy : TradingStrategyBase, ITradingStra
     {
         if (string.Equals(context.PositionSide, "flat", StringComparison.OrdinalIgnoreCase))
         {
+            if (context.PreviousCandles.Count < StrategyRegistryService.BuySellMovingAveragePeriod + 1)
+            {
+                return new(Hold, "历史 K 线不足 21 根，无法判断 MA20 均值曲线方向，继续等待。");
+            }
+
+            var movingAverageTrend = StrategyRegistryService.ResolveBuySellMovingAverageTrend(context.PreviousCandles);
+            if (movingAverageTrend > 0)
+            {
+                return new(OpenLong, "过去 20 个点的均值曲线向上，开多。", context.Candle.Close);
+            }
+
+            if (movingAverageTrend < 0)
+            {
+                return new(OpenShort, "过去 20 个点的均值曲线向下，开空。", context.Candle.Close);
+            }
+
+            return new(Hold, "过去 20 个点的均值曲线走平，继续观望。");
+#pragma warning disable CS0162
             if (context.PreviousCandles.Count < 3)
             {
                 return new(Hold, "历史 K 线不足 3 根，继续等待。");

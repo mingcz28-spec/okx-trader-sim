@@ -32,7 +32,7 @@ export default function App() {
         </div>
       </header>
 
-      {state ? (
+      {state && mode === 'market' ? (
         <section className="metricStrip">
           <div>
             <span>账户权益</span>
@@ -43,12 +43,12 @@ export default function App() {
             <strong>{formatNumber(state.availableMargin, 4)}</strong>
           </div>
           <div>
-            <span>今日盈亏</span>
+            <span>持仓浮盈</span>
             <strong className={state.dailyPnl >= 0 ? 'good' : 'bad'}>{formatSigned(state.dailyPnl, 4)}</strong>
           </div>
           <div>
-            <span>策略状态</span>
-            <strong>{state.strategyStatus}</strong>
+            <span>持仓状态</span>
+            <strong>{state.positions.length ? '有持仓' : '空仓'}</strong>
           </div>
         </section>
       ) : null}

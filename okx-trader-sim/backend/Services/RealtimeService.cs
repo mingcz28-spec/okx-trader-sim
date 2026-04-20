@@ -11,6 +11,11 @@ public sealed class RealtimeService
     private const decimal ExitFeeRate = StrategyRegistryService.DefaultTakerFeeRate;
     private const decimal RoundTripFeeRate = EntryFeeRate + ExitFeeRate;
     private const decimal MaxLiveCapitalUsageRate = 0.2m;
+    private const int MaxLiveCloseAttempts = 3;
+    private static readonly TimeSpan LiveCloseVerificationDelay = TimeSpan.FromMilliseconds(700);
+    private static readonly decimal[] OptimizationStopLossGrid = [0.5m, 0.8m, 1m, 1.2m, 1.5m, 2m];
+    private static readonly decimal[] OptimizationTrailingGrid = [1m, 1.5m, 2m, 2.5m, 3m, 4m];
+    private static readonly decimal[] OptimizationLeverageGrid = [1m, 2m, 3m, 5m];
     private readonly AppRepository _repository;
     private readonly OkxClient _okxClient;
     private readonly StrategyRegistryService _strategyRegistry;
@@ -35,12 +40,20 @@ public sealed class RealtimeService
         var parameters = BuildParameters(request.StopLossPct, request.TrailingDrawdownPct, request.Leverage, strategy.DefaultParams);
         var (defaultParams, defaultSource) = ResolveParameters(latestBacktest, strategy, strategyType, instId, bar);
         var source = SameParams(parameters, defaultParams) ? defaultSource : "manual";
+        var previousSession = await _repository.GetRealtimeSessionAsync();
+        if (HasOpenPosition(previousSession))
+        {
+            await ForceExitSimulatedSessionImmediateAsync(previousSession!);
+        }
+
+        var candles = await _okxClient.GetHistoryCandlesAsync(instId, bar, 120, 3);
         var session = new RealtimeSessionDocument
         {
             SessionId = DocumentIds.Default, Mode = "simulated", InstId = instId, Bar = bar, StrategyType = strategy.Definition.Id,
             StopLossPct = parameters.StopLossPct, TrailingDrawdownPct = parameters.TrailingDrawdownPct, Leverage = parameters.Leverage,
+            AutoOptimizeParameters = request.AutoOptimizeParameters == true,
             ParamsSource = source, StartedAt = DateTime.UtcNow, Status = "running", PositionSide = "flat", RealizedEquity = 1m,
-            LastEquity = 1m, LastSignal = "hold", SignalReason = "等待下一根已收盘 K 线确认。", PeriodEvaluations = [], TradePoints = []
+            LastEquity = 1m, LastSettledCandleTs = candles.LastOrDefault()?.Ts, LastSignal = "hold", SignalReason = "实时模拟已启动，将从下一根已收盘 K 线开始执行。", PeriodEvaluations = [], TradePoints = []
         };
         await _repository.SaveRealtimeSessionAsync(session);
         var strategyConfig = await _repository.GetStrategyConfigAsync();
@@ -55,7 +68,7 @@ public sealed class RealtimeService
     {
         await EnsureLiveAccountReadyAsync();
         var simulatedSession = await _repository.GetRealtimeSessionAsync();
-        if (simulatedSession is null || !string.Equals(simulatedSession.Status, "running", StringComparison.OrdinalIgnoreCase))
+        if (simulatedSession is null)
         {
             throw new InvalidOperationException("LIVE_SESSION_REQUIRES_CONFIRMED_SIMULATION: 请先确认实时模拟会话，再启动实盘交易。");
         }
@@ -71,51 +84,29 @@ public sealed class RealtimeService
         }
 
         var liveSession = await _repository.GetLiveRealtimeSessionAsync();
-        if (liveSession is not null
-            && (string.Equals(liveSession.PositionSide, "long", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(liveSession.PositionSide, "short", StringComparison.OrdinalIgnoreCase)))
+        if (HasOpenPosition(liveSession))
         {
-            var sameConfig =
-                string.Equals(liveSession.InstId, simulatedSession.InstId, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(liveSession.Bar, simulatedSession.Bar, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(liveSession.StrategyType, simulatedSession.StrategyType, StringComparison.OrdinalIgnoreCase)
-                && SameParams(
-                    new StrategyParameterSetDto(liveSession.StopLossPct, liveSession.TrailingDrawdownPct, liveSession.Leverage),
-                    liveParams);
-
-            if (!sameConfig)
-            {
-                throw new InvalidOperationException("LIVE_SESSION_HAS_OPEN_POSITION: 当前实盘持仓未退出，不能切换配置或覆盖实盘参数。请先强制退出实盘持仓。");
-            }
+            await ForceExitLiveSessionImmediateAsync(liveSession!);
+            if (string.Equals(liveSession!.Status, "error", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(liveSession.ErrorMessage ?? "LIVE_FORCE_EXIT_BEFORE_START_FAILED: 启动实盘前平仓失败。");
+        }
+        else if (liveSession is not null && (await ReadLivePositionSnapshotsAsync(liveSession.InstId)).Count > 0)
+        {
+            await ForceExitLiveSessionImmediateAsync(liveSession);
+            if (string.Equals(liveSession.Status, "error", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(liveSession.ErrorMessage ?? "LIVE_FORCE_EXIT_BEFORE_START_FAILED: 启动实盘前平仓失败。");
         }
 
         await SyncLiveLeverageAsync(simulatedSession.InstId, liveParams.Leverage);
+        var candles = await _okxClient.GetHistoryCandlesAsync(simulatedSession.InstId, simulatedSession.Bar, 120, 3);
         var session = new RealtimeSessionDocument
         {
             SessionId = "live-default", Mode = "live", InstId = simulatedSession.InstId, Bar = simulatedSession.Bar, StrategyType = simulatedSession.StrategyType,
             StopLossPct = liveParams.StopLossPct, TrailingDrawdownPct = liveParams.TrailingDrawdownPct, Leverage = liveParams.Leverage,
-            ParamsSource = liveParamsSource, StartedAt = DateTime.UtcNow, Status = "running", PositionSide = liveSession?.PositionSide ?? "flat", RealizedEquity = 1m,
-            LastEquity = 1m, LastSignal = "hold", SignalReason = "实盘自动交易已启动，等待下一根已收盘 K 线。", PeriodEvaluations = [], TradePoints = []
+            AutoOptimizeParameters = request.AutoOptimizeParameters == true,
+            ParamsSource = liveParamsSource, StartedAt = DateTime.UtcNow, Status = "running", PositionSide = "flat", RealizedEquity = 1m,
+            LastEquity = 1m, LastSettledCandleTs = candles.LastOrDefault()?.Ts, LastSignal = "hold", SignalReason = "实盘自动交易已启动，将从下一根已收盘 K 线开始执行。", PeriodEvaluations = [], TradePoints = []
         };
-        if (liveSession is not null && string.Equals(liveSession.InstId, simulatedSession.InstId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(liveSession.Bar, simulatedSession.Bar, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(liveSession.StrategyType, simulatedSession.StrategyType, StringComparison.OrdinalIgnoreCase)
-            && SameParams(new StrategyParameterSetDto(liveSession.StopLossPct, liveSession.TrailingDrawdownPct, liveSession.Leverage), liveParams))
-        {
-            session.PositionSide = liveSession.PositionSide;
-            session.EntryPrice = liveSession.EntryPrice;
-            session.EntryTs = liveSession.EntryTs;
-            session.PeakPrice = liveSession.PeakPrice;
-            session.TroughPrice = liveSession.TroughPrice;
-            session.PositionSize = liveSession.PositionSize;
-            session.AllocatedCapital = liveSession.AllocatedCapital;
-            session.EntryNotionalUsd = liveSession.EntryNotionalUsd;
-            session.LastSettledCandleTs = liveSession.LastSettledCandleTs;
-            session.RealizedEquity = liveSession.RealizedEquity;
-            session.LastEquity = liveSession.LastEquity;
-            session.PeriodEvaluations = liveSession.PeriodEvaluations;
-            session.TradePoints = liveSession.TradePoints;
-        }
         await _repository.SaveLiveRealtimeSessionAsync(session);
         await SetStrategyStatusFromLiveSessionsAsync();
         return await GetWorkspaceAsync(new RealtimeWorkspaceRequest(simulatedSession.InstId, simulatedSession.Bar, simulatedSession.StrategyType, true));
@@ -124,21 +115,15 @@ public sealed class RealtimeService
     public async Task<RealtimeWorkspaceDto> ForceExitAsync()
     {
         var session = await _repository.GetRealtimeSessionAsync();
-        if (session is null || !string.Equals(session.Status, "running", StringComparison.OrdinalIgnoreCase)) return await GetWorkspaceAsync(new RealtimeWorkspaceRequest(null, null, null, true));
-        var strategy = _strategyRegistry.GetRunnable(session.StrategyType);
-        var candles = await _okxClient.GetHistoryCandlesAsync(session.InstId, session.Bar, 120, 3);
-        var latestPrice = await ReadLatestPriceAsync(session.InstId, candles);
-        await SettleSimulatedSessionAsync(session, strategy, candles, latestPrice, true);
+        if (session is null) return await GetWorkspaceAsync(new RealtimeWorkspaceRequest(null, null, null, true));
+        await ForceExitSimulatedSessionImmediateAsync(session);
         return await GetWorkspaceAsync(new RealtimeWorkspaceRequest(session.InstId, session.Bar, session.StrategyType, true));
     }
 
     public async Task<RealtimeWorkspaceDto> ForceExitLiveSessionAsync()
     {
         var session = await _repository.GetLiveRealtimeSessionAsync() ?? throw new InvalidOperationException("LIVE_SESSION_NOT_FOUND: 未找到该实盘会话。");
-        var strategy = _strategyRegistry.GetRunnable(session.StrategyType);
-        var candles = await _okxClient.GetHistoryCandlesAsync(session.InstId, session.Bar, 120, 3);
-        var latestPrice = await ReadLatestPriceAsync(session.InstId, candles);
-        await SettleLiveSessionAsync(session, strategy, candles, latestPrice, true);
+        await ForceExitLiveSessionImmediateAsync(session);
         return await GetWorkspaceAsync(new RealtimeWorkspaceRequest(session.InstId, session.Bar, session.StrategyType, true));
     }
 
@@ -152,6 +137,10 @@ public sealed class RealtimeService
     public async Task<RealtimeWorkspaceDto> ResumeLiveSessionAsync()
     {
         var session = await _repository.GetLiveRealtimeSessionAsync() ?? throw new InvalidOperationException("LIVE_SESSION_NOT_FOUND: 未找到该实盘会话。");
+        if (!string.Equals(session.Status, "paused", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("LIVE_SESSION_NOT_PAUSED: 只有暂停状态可以恢复；已停止会话请重新启动实时交易。");
+        }
         var simulatedSession = await _repository.GetRealtimeSessionAsync();
         if (simulatedSession is null || !string.Equals(simulatedSession.Status, "running", StringComparison.OrdinalIgnoreCase))
         {
@@ -190,6 +179,8 @@ public sealed class RealtimeService
         var session = await _repository.GetLiveRealtimeSessionAsync();
         if (session is null || !string.Equals(session.Status, "running", StringComparison.OrdinalIgnoreCase)) return;
         cancellationToken.ThrowIfCancellationRequested();
+        var simulatedSession = await _repository.GetRealtimeSessionAsync();
+        AlignLiveStrategyStateWithSimulation(session, simulatedSession);
         var strategy = _strategyRegistry.GetRunnable(session.StrategyType);
         var candles = await _okxClient.GetHistoryCandlesAsync(session.InstId, session.Bar, 120, 3);
         await SettleLiveSessionAsync(session, strategy, candles, null, false);
@@ -212,15 +203,18 @@ public sealed class RealtimeService
         var activeParams = session is null ? previewParams : new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage);
         var activeSource = session?.ParamsSource ?? previewSource;
         var candles = await _okxClient.GetHistoryCandlesAsync(instId, bar, 120, 3);
-        if (session is not null) await SettleSimulatedSessionAsync(session, strategy, candles, null, false);
+        if (session is not null && string.Equals(session.Status, "running", StringComparison.OrdinalIgnoreCase)) await SettleSimulatedSessionAsync(session, strategy, candles, null, false);
         var refreshedSession = session is null ? null : await _repository.GetRealtimeSessionAsync();
         if (refreshedSession is not null && !IsMatchingSession(refreshedSession, instId, bar, strategy.Definition.Id)) refreshedSession = null;
+        var refreshedActiveParams = refreshedSession is null ? activeParams : new StrategyParameterSetDto(refreshedSession.StopLossPct, refreshedSession.TrailingDrawdownPct, refreshedSession.Leverage);
+        var refreshedActiveSource = refreshedSession?.ParamsSource ?? activeSource;
         var currentCandle = await ReadCurrentCandleAsync(instId, bar, candles);
         var latestPrice = await ReadLatestPriceAsync(instId, candles);
-        var simulation = BuildSimulation(candles, activeParams, activeSource, refreshedSession);
+        var simulation = BuildSimulation(candles, refreshedActiveParams, refreshedActiveSource, refreshedSession);
         var liveSession = await _repository.GetLiveRealtimeSessionAsync();
         if (liveSession is not null)
         {
+            AlignLiveStrategyStateWithSimulation(liveSession, refreshedSession);
             var liveStrategy = _strategyRegistry.GetRunnable(liveSession.StrategyType);
             var liveCandles = string.Equals(liveSession.InstId, instId, StringComparison.OrdinalIgnoreCase) && string.Equals(liveSession.Bar, bar, StringComparison.OrdinalIgnoreCase)
                 ? candles
@@ -229,7 +223,7 @@ public sealed class RealtimeService
             liveSession = await _repository.GetLiveRealtimeSessionAsync();
         }
         var live = BuildLive(state, strategyConfig, positions, apiConnection, simulation, latestPrice, refreshedSession is not null, liveSession);
-        return new RealtimeWorkspaceDto(instId, bar, strategy.Definition.Id, refreshedSession is null ? strategy.Definition.Id : null, refreshedSession?.StrategyType, refreshedSession is null ? null : ToSessionDto(refreshedSession), liveSession is null ? null : ToLiveSessionDto(liveSession), activeParams, activeSource, candles, currentCandle, latestPrice, candles.LastOrDefault()?.Ts, BuildNextRefreshAt(candles.LastOrDefault()?.Ts, bar), DateTime.UtcNow, simulation, live);
+        return new RealtimeWorkspaceDto(instId, bar, strategy.Definition.Id, refreshedSession is null ? strategy.Definition.Id : null, refreshedSession?.StrategyType, refreshedSession is null ? null : ToSessionDto(refreshedSession), liveSession is null ? null : ToLiveSessionDto(liveSession), refreshedActiveParams, refreshedActiveSource, candles, currentCandle, latestPrice, candles.LastOrDefault()?.Ts, BuildNextRefreshAt(candles.LastOrDefault()?.Ts, bar), DateTime.UtcNow, simulation, live);
     }
 
     public async Task<object> GetConsoleAsync()
@@ -247,7 +241,8 @@ public sealed class RealtimeService
         for (var i = startIndex; i < candles.Count; i++)
         {
             var candle = candles[i];
-            var decision = strategy.EvaluateRealtimePeriod(new RealtimePeriodContext(candle, candles.Take(i).ToList(), session.PositionSide, session.EntryPrice, session.PeakPrice, session.TroughPrice, new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage)));
+            var previousCandles = candles.Take(i).ToList();
+            var decision = EvaluateRealtimeDecision(session, strategy, candle, previousCandles);
             ApplySimulatedPeriodDecision(session, candle, decision);
         }
         if (forceExit)
@@ -260,8 +255,32 @@ public sealed class RealtimeService
                 AppendEvaluation(session, forceCandle, "force_close", closePrice, "已按最新参考价强制退出模拟持仓。", true);
                 ApplyClose(session, closeTs, closePrice, "force_close", "已按最新参考价强制退出模拟持仓。");
             }
-            else session.SignalReason = "当前无模拟持仓。";
+            else session.SignalReason = "当前无模拟持仓，实时模拟已停止。";
+            session.Status = "stopped";
         }
+        await _repository.SaveRealtimeSessionAsync(session);
+    }
+
+    private async Task ForceExitSimulatedSessionImmediateAsync(RealtimeSessionDocument session)
+    {
+        if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase))
+        {
+            var closePrice = await ReadLatestPriceAsync(session.InstId, []) ?? session.EntryPrice ?? 0m;
+            var closeTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var forceCandle = new CandlePointDto(closeTs, closePrice, closePrice, closePrice, closePrice);
+            AppendEvaluation(session, forceCandle, "force_close", closePrice, "已按最新参考价强制退出模拟持仓。", true);
+            ApplyClose(session, closeTs, closePrice, "force_close", "已按最新参考价强制退出模拟持仓。");
+            session.LastSettledCandleTs = closeTs;
+        }
+        else
+        {
+            session.LastSignal = "hold";
+            session.SignalReason = "当前无模拟持仓，实时模拟已停止。";
+        }
+
+        session.Status = "stopped";
+        session.ErrorCode = null;
+        session.ErrorMessage = null;
         await _repository.SaveRealtimeSessionAsync(session);
     }
 
@@ -273,7 +292,8 @@ public sealed class RealtimeService
         for (var i = startIndex; i < candles.Count; i++)
         {
             var candle = candles[i];
-            var decision = strategy.EvaluateRealtimePeriod(new RealtimePeriodContext(candle, candles.Take(i).ToList(), session.PositionSide, session.EntryPrice, session.PeakPrice, session.TroughPrice, new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage)));
+            var previousCandles = candles.Take(i).ToList();
+            var decision = EvaluateRealtimeDecision(session, strategy, candle, previousCandles);
             try { await ApplyLivePeriodDecisionAsync(session, candle, decision); }
             catch (Exception ex)
             {
@@ -283,23 +303,90 @@ public sealed class RealtimeService
         }
         if (forceExit)
         {
-            if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase) && session.EntryPrice.HasValue && session.PositionSize.GetValueOrDefault() > 0m)
+            if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
-                    var requestedPrice = latestPrice ?? candles.LastOrDefault()?.Close ?? session.EntryPrice.Value;
+                    var fallbackEntry = session.EntryPrice ?? session.ExecutionEntryPrice ?? candles.LastOrDefault()?.Close ?? 0m;
+                    var requestedPrice = latestPrice ?? candles.LastOrDefault()?.Close ?? fallbackEntry;
                     var executionPrice = await ExecuteLiveCloseAsync(session, "force_close", "已按最新参考价强制退出实盘持仓。", requestedPrice);
                     var closeTs = session.LastExecutionTs ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     var forceCandle = new CandlePointDto(closeTs, executionPrice, executionPrice, executionPrice, executionPrice);
                     AppendEvaluation(session, forceCandle, "force_close", executionPrice, "已按最新参考价强制退出实盘持仓。", true);
                     ApplyClose(session, closeTs, executionPrice, "force_close", "已按最新参考价强制退出实盘持仓。");
+                    session.Status = "stopped";
                 }
                 catch (Exception ex) { session.Status = "error"; session.ErrorCode = "OKX_FORCE_EXIT_FAILED"; session.ErrorMessage = ex.Message; session.SignalReason = ex.Message; }
             }
-            else session.SignalReason = "当前无实盘持仓。";
+            else { session.SignalReason = "当前无实盘持仓，实时交易已停止。"; session.Status = "stopped"; }
         }
         await _repository.SaveLiveRealtimeSessionAsync(session); await SetStrategyStatusFromLiveSessionsAsync();
     }
+
+    private async Task ForceExitLiveSessionImmediateAsync(RealtimeSessionDocument session)
+    {
+        if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var fallbackEntry = session.EntryPrice ?? session.ExecutionEntryPrice ?? 0m;
+                var requestedPrice = await ReadLatestPriceAsync(session.InstId, []) ?? fallbackEntry;
+                var executionPrice = await ExecuteLiveCloseAsync(session, "force_close", "已按最新参考价强制退出实盘持仓。", requestedPrice);
+                var closeTs = session.LastExecutionTs ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var forceCandle = new CandlePointDto(closeTs, executionPrice, executionPrice, executionPrice, executionPrice);
+                AppendEvaluation(session, forceCandle, "force_close", executionPrice, "已按最新参考价强制退出实盘持仓。", true);
+                ApplyClose(session, closeTs, executionPrice, "force_close", "已按最新参考价强制退出实盘持仓。");
+                session.LastSettledCandleTs = closeTs;
+                session.Status = "stopped";
+                session.ErrorCode = null;
+                session.ErrorMessage = null;
+            }
+            catch (Exception ex)
+            {
+                session.Status = "error";
+                session.ErrorCode = "OKX_FORCE_EXIT_FAILED";
+                session.ErrorMessage = ex.Message;
+                session.SignalReason = ex.Message;
+            }
+        }
+        else
+        {
+            try
+            {
+                var requestedPrice = await ReadLatestPriceAsync(session.InstId, []) ?? session.EntryPrice ?? session.ExecutionEntryPrice ?? 0m;
+                var closedResiduals = await ExecuteLiveCloseAllExchangePositionsAsync(session, "force_close", "已按最新参考价强制退出 OKX 剩余实盘持仓。", requestedPrice);
+                if (closedResiduals > 0)
+                {
+                    var closeTs = session.LastExecutionTs ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    var executionPrice = session.LastExecutionPrice ?? requestedPrice;
+                    var forceCandle = new CandlePointDto(closeTs, executionPrice, executionPrice, executionPrice, executionPrice);
+                    ClearPositionState(session, "force_close", "已按最新参考价强制退出 OKX 剩余实盘持仓。");
+                    AppendEvaluation(session, forceCandle, "force_close", executionPrice, "已按最新参考价强制退出 OKX 剩余实盘持仓。");
+                    session.LastSettledCandleTs = closeTs;
+                }
+                else
+                {
+                    session.LastSignal = "hold";
+                    session.SignalReason = "当前无实盘持仓，实时交易已停止。";
+                }
+
+                session.Status = "stopped";
+                session.ErrorCode = null;
+                session.ErrorMessage = null;
+            }
+            catch (Exception ex)
+            {
+                session.Status = "error";
+                session.ErrorCode = "OKX_FORCE_EXIT_FAILED";
+                session.ErrorMessage = ex.Message;
+                session.SignalReason = ex.Message;
+            }
+        }
+
+        await _repository.SaveLiveRealtimeSessionAsync(session);
+        await SetStrategyStatusFromLiveSessionsAsync();
+    }
+
     private async Task ApplyLivePeriodDecisionAsync(RealtimeSessionDocument session, CandlePointDto candle, RealtimePeriodDecision decision)
     {
         session.LastSignal = decision.Action; session.SignalReason = decision.Reason; session.ErrorCode = null; session.ErrorMessage = null;
@@ -309,8 +396,14 @@ public sealed class RealtimeService
             {
                 await SyncLiveLeverageAsync(session.InstId, session.Leverage);
                 var executionPrice = await ExecuteLiveOpenAsync(session, candle, decision);
-                session.PositionSide = decision.Action == "open_long" ? "long" : "short"; session.EntryPrice = executionPrice; session.EntryTs = candle.Ts; session.PeakPrice = candle.Close; session.TroughPrice = candle.Close;
-                AppendEvaluation(session, candle, decision.Action, executionPrice, decision.Reason);
+                session.PositionSide = decision.Action == "open_long" ? "long" : "short";
+                session.EntryPrice = decision.ExecutionPrice ?? candle.Close;
+                session.EntryTs = candle.Ts;
+                session.ExecutionEntryPrice = executionPrice;
+                session.ExecutionEntryTs = session.LastExecutionTs ?? candle.Ts;
+                session.PeakPrice = candle.Close;
+                session.TroughPrice = candle.Close;
+                AppendEvaluation(session, candle, decision.Action, session.EntryPrice, decision.Reason);
             }
             else AppendEvaluation(session, candle, decision.Action, decision.ExecutionPrice, decision.Reason);
             session.LastSettledCandleTs = candle.Ts; return;
@@ -319,12 +412,88 @@ public sealed class RealtimeService
         session.TroughPrice = Math.Min(session.TroughPrice ?? session.EntryPrice ?? candle.Close, candle.Close);
         if (decision.Action == "close")
         {
-            var executionPrice = await ExecuteLiveCloseAsync(session, "close", decision.Reason, decision.ExecutionPrice ?? candle.Close);
-            AppendEvaluation(session, candle, decision.Action, executionPrice, decision.Reason, true);
-            ApplyClose(session, session.LastExecutionTs ?? candle.Ts, executionPrice, "close", decision.Reason);
+            var closeReason = ResolveCloseReason(session, candle, decision);
+            var strategyClosePrice = decision.ExecutionPrice ?? candle.Close;
+            _ = await ExecuteLiveCloseAsync(session, "close", closeReason, strategyClosePrice);
+            AppendEvaluation(session, candle, decision.Action, strategyClosePrice, closeReason, true);
+            ApplyClose(session, session.LastExecutionTs ?? candle.Ts, strategyClosePrice, "close", closeReason);
         }
         else AppendEvaluation(session, candle, decision.Action, decision.ExecutionPrice, decision.Reason);
         session.LastSettledCandleTs = candle.Ts;
+    }
+
+    private static RealtimePeriodDecision EvaluateRealtimeDecision(RealtimeSessionDocument session, ITradingStrategy strategy, CandlePointDto candle, List<CandlePointDto> previousCandles)
+    {
+        var optimizationReason = TryOptimizeParametersBeforeEntry(session, strategy, previousCandles);
+        var decision = strategy.EvaluateRealtimePeriod(new RealtimePeriodContext(
+            candle,
+            previousCandles,
+            session.PositionSide,
+            session.EntryPrice,
+            session.PeakPrice,
+            session.TroughPrice,
+            new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage)));
+
+        if (!string.IsNullOrWhiteSpace(optimizationReason) && decision.Action is "open_long" or "open_short")
+        {
+            return decision with { Reason = $"{optimizationReason}；{decision.Reason}" };
+        }
+
+        return decision;
+    }
+
+    private static string? TryOptimizeParametersBeforeEntry(RealtimeSessionDocument session, ITradingStrategy strategy, List<CandlePointDto> previousCandles)
+    {
+        if (!session.AutoOptimizeParameters) return null;
+        if (!string.Equals(strategy.Definition.Id, "buy-sell", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!HasBuySellEntryOpportunity(previousCandles)) return null;
+
+        var best = FindBestRealtimeParameters(strategy, previousCandles);
+        if (best is null)
+        {
+            session.LastOptimizationReason = "自动寻找最佳参数：历史 K 线不足或没有可用结果，继续使用当前参数。";
+            return session.LastOptimizationReason;
+        }
+
+        session.StopLossPct = best.StopLossPct;
+        session.TrailingDrawdownPct = best.TrailingDrawdownPct;
+        session.Leverage = best.Leverage;
+        session.ParamsSource = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)
+            ? "live-auto-best"
+            : "auto-best";
+        session.LastOptimizationResult = best;
+        session.LastOptimizationReason = $"自动寻找最佳参数：止损 {best.StopLossPct:0.##}% / 浮盈回撤 {best.TrailingDrawdownPct:0.##}% / 杠杆 {best.Leverage:0.##}x，净收益 {best.NetTotalReturn:P2}。";
+        return session.LastOptimizationReason;
+    }
+
+    private static bool HasBuySellEntryOpportunity(List<CandlePointDto> previousCandles)
+    {
+        return StrategyRegistryService.ResolveBuySellMovingAverageTrend(previousCandles) != 0;
+    }
+
+    private static BacktestResultDto? FindBestRealtimeParameters(ITradingStrategy strategy, List<CandlePointDto> previousCandles)
+    {
+        if (previousCandles.Count < StrategyRegistryService.BuySellMovingAveragePeriod + 1) return null;
+
+        var results = new List<BacktestResultDto>();
+        foreach (var leverage in OptimizationLeverageGrid)
+        {
+            foreach (var stop in OptimizationStopLossGrid)
+            {
+                foreach (var trailing in OptimizationTrailingGrid)
+                {
+                    if (!StrategyRegistryService.IsLeveragedStopLossAllowed(stop, leverage)) continue;
+                    results.Add(strategy.RunBacktest(previousCandles, stop, trailing, leverage).Summary);
+                }
+            }
+        }
+
+        return results
+            .OrderByDescending(x => x.NetTotalReturn)
+            .ThenByDescending(x => x.MaxDrawdown)
+            .ThenByDescending(x => x.WinRate)
+            .FirstOrDefault();
     }
 
     private async Task<decimal> ExecuteLiveOpenAsync(RealtimeSessionDocument session, CandlePointDto candle, RealtimePeriodDecision decision)
@@ -342,15 +511,110 @@ public sealed class RealtimeService
 
     private async Task<decimal> ExecuteLiveCloseAsync(RealtimeSessionDocument session, string action, string reason, decimal fallbackPrice)
     {
-        var size = session.PositionSize.GetValueOrDefault();
-        if (size <= 0m) throw new InvalidOperationException("LIVE_POSITION_SIZE_MISSING: 当前实盘持仓数量无效，不能平仓。");
         var currentPrice = await _okxClient.GetLatestPriceAsync(session.InstId) ?? fallbackPrice;
         var closeLong = string.Equals(session.PositionSide, "long", StringComparison.OrdinalIgnoreCase);
-        var request = new OkxPlaceOrderRequest { InstId = session.InstId, TdMode = "cross", OrdType = "market", PosSide = closeLong ? "long" : "short", Side = closeLong ? "sell" : "buy", Size = size.ToString(CultureInfo.InvariantCulture), ReduceOnly = true };
-        var response = await _okxClient.PlaceOrderAsync(request, "live");
-        var data = response.Data.FirstOrDefault();
-        session.LastOrderId = data?.OrdId; session.LastExecutionPrice = currentPrice; session.LastExecutionTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); session.LastExecutionSize = size; session.LastSignal = action; session.SignalReason = reason;
+        var totalRequestedSize = 0m;
+        string? lastOrderId = null;
+
+        for (var attempt = 0; attempt < MaxLiveCloseAttempts; attempt++)
+        {
+            var position = await ReadLivePositionSnapshotAsync(session);
+            if (position is null || position.Size <= 0m)
+            {
+                session.PositionSize = null;
+                session.LastOrderId = lastOrderId ?? session.LastOrderId;
+                session.LastExecutionPrice = currentPrice;
+                session.LastExecutionTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                session.LastExecutionSize = totalRequestedSize;
+                session.LastSignal = action;
+                session.SignalReason = totalRequestedSize > 0m ? reason : "OKX 未返回对应实盘持仓，本地会话已按空仓处理。";
+                return currentPrice;
+            }
+
+            ApplyLivePositionSnapshot(session, position);
+            var request = new OkxPlaceOrderRequest
+            {
+                InstId = session.InstId,
+                TdMode = "cross",
+                OrdType = "market",
+                PosSide = closeLong ? "long" : "short",
+                Side = closeLong ? "sell" : "buy",
+                Size = position.Size.ToString(CultureInfo.InvariantCulture),
+                ReduceOnly = true
+            };
+            var response = await _okxClient.PlaceOrderAsync(request, "live");
+            var data = response.Data.FirstOrDefault();
+            lastOrderId = data?.OrdId ?? lastOrderId;
+            totalRequestedSize += position.Size;
+            session.LastOrderId = lastOrderId;
+            session.LastExecutionPrice = currentPrice;
+            session.LastExecutionTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            session.LastExecutionSize = totalRequestedSize;
+            session.LastSignal = action;
+            session.SignalReason = reason;
+
+            await Task.Delay(LiveCloseVerificationDelay);
+        }
+
+        var remaining = await ReadLivePositionSnapshotAsync(session);
+        if (remaining is not null && remaining.Size > 0m)
+        {
+            ApplyLivePositionSnapshot(session, remaining);
+            throw new InvalidOperationException($"LIVE_POSITION_NOT_FULLY_CLOSED: 平仓后 OKX 仍返回 {remaining.Size:0.########} 张 {session.PositionSide} 持仓，已停止继续自动交易。");
+        }
+
+        session.PositionSize = null;
         return currentPrice;
+    }
+
+    private async Task<LivePositionSnapshot?> ReadLivePositionSnapshotAsync(RealtimeSessionDocument session)
+    {
+        var side = session.PositionSide;
+        return (await ReadLivePositionSnapshotsAsync(session.InstId))
+            .FirstOrDefault(x => string.Equals(x.Side, side, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<List<LivePositionSnapshot>> ReadLivePositionSnapshotsAsync(string instId)
+    {
+        var positions = await _okxClient.GetPositionsAsync("live");
+        if (positions.Code != "0") throw new InvalidOperationException(positions.Msg);
+
+        return positions.Data
+            .Where(x => string.Equals(x.InstId, instId, StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(x.PosSide, "long", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(x.PosSide, "short", StringComparison.OrdinalIgnoreCase)))
+            .Select(x => new LivePositionSnapshot(x.PosSide ?? string.Empty, Math.Abs(ParseDecimal(x.Pos)), ParseDecimal(x.AvgPx)))
+            .Where(x => x.Size > 0m)
+            .ToList();
+    }
+
+    private async Task<int> ExecuteLiveCloseAllExchangePositionsAsync(RealtimeSessionDocument session, string action, string reason, decimal fallbackPrice)
+    {
+        var positions = await ReadLivePositionSnapshotsAsync(session.InstId);
+        var closed = 0;
+        foreach (var position in positions)
+        {
+            ApplyLivePositionSnapshot(session, position);
+            _ = await ExecuteLiveCloseAsync(session, action, reason, fallbackPrice);
+            closed++;
+        }
+
+        session.PositionSide = "flat";
+        session.PositionSize = null;
+        return closed;
+    }
+
+    private static void ApplyLivePositionSnapshot(RealtimeSessionDocument session, LivePositionSnapshot position)
+    {
+        if (string.Equals(position.Side, "long", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(position.Side, "short", StringComparison.OrdinalIgnoreCase))
+        {
+            session.PositionSide = position.Side;
+        }
+        session.PositionSize = position.Size;
+        if (!session.ExecutionEntryPrice.HasValue && position.EntryPrice > 0m) session.ExecutionEntryPrice = position.EntryPrice;
+        if (!session.ExecutionEntryTs.HasValue) session.ExecutionEntryTs = session.EntryTs;
+        if (!session.EntryPrice.HasValue && position.EntryPrice > 0m) session.EntryPrice = position.EntryPrice;
     }
 
     private static void ApplySimulatedPeriodDecision(RealtimeSessionDocument session, CandlePointDto candle, RealtimePeriodDecision decision)
@@ -369,36 +633,131 @@ public sealed class RealtimeService
         session.TroughPrice = Math.Min(session.TroughPrice ?? session.EntryPrice ?? candle.Close, candle.Close);
         if (decision.Action == "close")
         {
-            var executionPrice = decision.ExecutionPrice ?? candle.Close; AppendEvaluation(session, candle, decision.Action, executionPrice, decision.Reason, true); ApplyClose(session, candle.Ts, executionPrice, "close", decision.Reason);
+            var executionPrice = decision.ExecutionPrice ?? candle.Close;
+            var closeReason = ResolveCloseReason(session, candle, decision);
+            AppendEvaluation(session, candle, decision.Action, executionPrice, closeReason, true);
+            ApplyClose(session, candle.Ts, executionPrice, "close", closeReason);
         }
         else AppendEvaluation(session, candle, decision.Action, decision.ExecutionPrice, decision.Reason);
         session.LastSettledCandleTs = candle.Ts;
     }
 
+    private static string ResolveCloseReason(RealtimeSessionDocument session, CandlePointDto candle, RealtimePeriodDecision decision)
+    {
+        if (IsStopLossTriggered(session, candle))
+        {
+            return string.Equals(session.PositionSide, "short", StringComparison.OrdinalIgnoreCase)
+                ? "已收盘 K 线触发空单止损。"
+                : "已收盘 K 线触发多单止损。";
+        }
+
+        if (IsTrailingExitTriggered(session, candle))
+        {
+            return string.Equals(session.PositionSide, "short", StringComparison.OrdinalIgnoreCase)
+                ? "已收盘 K 线触发空单浮盈回撤。"
+                : "已收盘 K 线触发多单浮盈回撤。";
+        }
+
+        return decision.Reason;
+    }
+
+    private static bool IsStopLossTriggered(RealtimeSessionDocument session, CandlePointDto candle)
+    {
+        if (!session.EntryPrice.HasValue || session.EntryPrice.Value <= 0m) return false;
+        var entry = session.EntryPrice.Value;
+        if (string.Equals(session.PositionSide, "long", StringComparison.OrdinalIgnoreCase))
+        {
+            return candle.Low <= entry * (1m - session.StopLossPct / 100m);
+        }
+
+        if (string.Equals(session.PositionSide, "short", StringComparison.OrdinalIgnoreCase))
+        {
+            return candle.High >= entry * (1m + session.StopLossPct / 100m);
+        }
+
+        return false;
+    }
+
+    private static bool IsTrailingExitTriggered(RealtimeSessionDocument session, CandlePointDto candle)
+    {
+        if (!session.EntryPrice.HasValue || session.EntryPrice.Value <= 0m) return false;
+        var entry = session.EntryPrice.Value;
+        if (string.Equals(session.PositionSide, "long", StringComparison.OrdinalIgnoreCase))
+        {
+            var peakClose = Math.Max(session.PeakPrice ?? entry, candle.Close);
+            var maxProfit = peakClose - entry;
+            var currentProfit = candle.Close - entry;
+            var profitDrawdown = maxProfit <= 0m ? 0m : (maxProfit - currentProfit) / maxProfit * 100m;
+            return maxProfit > 0m && currentProfit > 0m && profitDrawdown >= session.TrailingDrawdownPct;
+        }
+
+        if (string.Equals(session.PositionSide, "short", StringComparison.OrdinalIgnoreCase))
+        {
+            var troughClose = Math.Min(session.TroughPrice ?? entry, candle.Close);
+            var maxProfit = entry - troughClose;
+            var currentProfit = entry - candle.Close;
+            var profitDrawdown = maxProfit <= 0m ? 0m : (maxProfit - currentProfit) / maxProfit * 100m;
+            return maxProfit > 0m && currentProfit > 0m && profitDrawdown >= session.TrailingDrawdownPct;
+        }
+
+        return false;
+    }
+
     private static void ApplyClose(RealtimeSessionDocument session, long ts, decimal executionPrice, string action, string reason)
     {
-        if (!session.EntryPrice.HasValue || !session.EntryTs.HasValue) return;
-        var grossRet = CalculateGrossReturn(session.PositionSide, session.EntryPrice.Value, executionPrice, session.Leverage);
+        var entryPrice = ResolveReturnEntryPrice(session);
+        var entryTs = ResolveReturnEntryTs(session);
+        if (!entryPrice.HasValue || !entryTs.HasValue)
+        {
+            ClearPositionState(session, action, reason);
+            return;
+        }
+
+        var grossRet = CalculateGrossReturn(session.PositionSide, entryPrice.Value, executionPrice, session.Leverage);
         var netRet = grossRet - RoundTripFeeRate;
-        session.TradePoints.Add(new BacktestTradePointDto(session.EntryTs.Value, session.EntryPrice.Value, ts, executionPrice, netRet, action == "force_close" ? "force_close" : NormalizeReason(reason), session.PositionSide, grossRet, netRet, session.Leverage, RoundTripFeeRate, EntryFeeRate, ExitFeeRate, session.LastOrderId, session.Mode, action, session.PositionSide, executionPrice, session.LastExecutionSize, "filled"));
-        session.RealizedEquity *= 1m + netRet; session.LastEquity = session.RealizedEquity; session.PositionSide = "flat"; session.EntryPrice = null; session.EntryTs = null; session.PeakPrice = null; session.TroughPrice = null; session.PositionSize = null; session.AllocatedCapital = null; session.EntryNotionalUsd = null; session.LastSignal = action; session.SignalReason = reason;
+        var actualExecutionPrice = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)
+            ? session.LastExecutionPrice ?? executionPrice
+            : executionPrice;
+        session.TradePoints.Add(new BacktestTradePointDto(entryTs.Value, entryPrice.Value, ts, executionPrice, netRet, action == "force_close" ? "force_close" : NormalizeReason(reason), session.PositionSide, grossRet, netRet, session.Leverage, RoundTripFeeRate, EntryFeeRate, ExitFeeRate, session.LastOrderId, session.Mode, action, session.PositionSide, actualExecutionPrice, session.LastExecutionSize, "filled"));
+        session.RealizedEquity *= 1m + netRet; session.LastEquity = session.RealizedEquity; ClearPositionState(session, action, reason);
+    }
+
+    private static void ClearPositionState(RealtimeSessionDocument session, string action, string reason)
+    {
+        session.PositionSide = "flat";
+        session.EntryPrice = null;
+        session.EntryTs = null;
+        session.ExecutionEntryPrice = null;
+        session.ExecutionEntryTs = null;
+        session.PeakPrice = null;
+        session.TroughPrice = null;
+        session.PositionSize = null;
+        session.AllocatedCapital = null;
+        session.EntryNotionalUsd = null;
+        session.LastSignal = action;
+        session.SignalReason = reason;
     }
 
     private static void AppendEvaluation(RealtimeSessionDocument session, CandlePointDto candle, string action, decimal? executionPrice, string reason, bool settleBeforeAppend = false)
     {
         var evaluationPositionSide = session.PositionSide; var realizedEquity = session.RealizedEquity; var currentEquity = session.LastEquity; var unrealizedReturn = 0m; var grossReturn = 0m; var netReturn = 0m; var feeCost = 0m;
-        if (settleBeforeAppend && session.EntryPrice.HasValue)
+        var returnEntryPrice = ResolveReturnEntryPrice(session);
+        if (settleBeforeAppend && returnEntryPrice.HasValue)
         {
-            var closePrice = executionPrice ?? candle.Close; grossReturn = CalculateGrossReturn(session.PositionSide, session.EntryPrice.Value, closePrice, session.Leverage); netReturn = grossReturn - RoundTripFeeRate; feeCost = RoundTripFeeRate; realizedEquity *= 1m + netReturn; currentEquity = realizedEquity; evaluationPositionSide = "flat";
+            var closePrice = executionPrice ?? candle.Close; grossReturn = CalculateGrossReturn(session.PositionSide, returnEntryPrice.Value, closePrice, session.Leverage); netReturn = grossReturn - RoundTripFeeRate; feeCost = RoundTripFeeRate; unrealizedReturn = netReturn; realizedEquity *= 1m + netReturn; currentEquity = realizedEquity; evaluationPositionSide = "flat";
         }
-        else if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase) && session.EntryPrice.HasValue)
+        else if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase) && returnEntryPrice.HasValue)
         {
-            grossReturn = CalculateGrossReturn(session.PositionSide, session.EntryPrice.Value, candle.Close, session.Leverage); netReturn = grossReturn - RoundTripFeeRate; feeCost = RoundTripFeeRate; unrealizedReturn = netReturn; currentEquity = realizedEquity * (1m + unrealizedReturn);
+            grossReturn = CalculateGrossReturn(session.PositionSide, returnEntryPrice.Value, candle.Close, session.Leverage); netReturn = grossReturn - RoundTripFeeRate; feeCost = RoundTripFeeRate; unrealizedReturn = netReturn; currentEquity = realizedEquity * (1m + unrealizedReturn);
         }
         var periodReturn = session.LastEquity == 0m ? 0m : currentEquity / session.LastEquity - 1m; var totalReturn = currentEquity - 1m;
         session.PeriodEvaluations.Add(new RealtimePeriodEvaluationDto(candle.Ts, candle.Close, action, evaluationPositionSide, executionPrice, reason, PositionStatusLabel(evaluationPositionSide), periodReturn, realizedEquity - 1m, unrealizedReturn, totalReturn, grossReturn, netReturn, feeCost, EntryFeeRate, ExitFeeRate, currentEquity));
         session.LastEquity = currentEquity;
     }
+
+    private static decimal? ResolveReturnEntryPrice(RealtimeSessionDocument session) => session.EntryPrice;
+
+    private static long? ResolveReturnEntryTs(RealtimeSessionDocument session) => session.EntryTs;
 
     private static RealtimeSimulationDto BuildSimulation(List<CandlePointDto> candles, StrategyParameterSetDto parameters, string paramsSource, RealtimeSessionDocument? session)
     {
@@ -408,7 +767,10 @@ public sealed class RealtimeService
         foreach (var equity in equityCurve) { peakEquity = Math.Max(peakEquity, equity); maxDrawdown = Math.Min(maxDrawdown, equity / peakEquity - 1m); }
         var wins = session.TradePoints.Count(x => x.NetRet > 0m); var grossTotalReturn = session.TradePoints.Aggregate(1m, (acc, trade) => acc * (1m + trade.GrossRet)) - 1m; var netTotalReturn = session.PeriodEvaluations.LastOrDefault()?.TotalReturn ?? 0m;
         var summary = new BacktestResultDto(parameters.StopLossPct, parameters.TrailingDrawdownPct, parameters.Leverage, session.TradePoints.Count, session.TradePoints.Count == 0 ? 0m : (decimal)wins / session.TradePoints.Count, netTotalReturn, maxDrawdown, grossTotalReturn, netTotalReturn, session.TradePoints.Sum(x => x.FeeCost));
-        return new RealtimeSimulationDto(summary, candles, session.TradePoints, parameters, parameterDefinitions, session.PeriodEvaluations, equityCurve, session.PeriodEvaluations.LastOrDefault()?.RealizedReturn ?? 0m, session.PeriodEvaluations.LastOrDefault()?.UnrealizedReturn ?? 0m, PositionStatusLabel(session.PositionSide), session.EntryPrice, session.EntryTs, session.TradePoints.LastOrDefault()?.NetRet, session.LastSignal, session.SignalReason, session.PeriodEvaluations.Count(x => x.Action is "open_long" or "open_short"), session.PeriodEvaluations.Count(x => x.Action is "close" or "force_close"), paramsSource, true, true);
+        var currentUnrealizedReturn = string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase)
+            ? 0m
+            : session.PeriodEvaluations.LastOrDefault()?.UnrealizedReturn ?? 0m;
+        return new RealtimeSimulationDto(summary, candles, session.TradePoints, parameters, parameterDefinitions, session.PeriodEvaluations, equityCurve, session.PeriodEvaluations.LastOrDefault()?.RealizedReturn ?? 0m, currentUnrealizedReturn, PositionStatusLabel(session.PositionSide), session.EntryPrice, session.EntryTs, session.TradePoints.LastOrDefault()?.NetRet, session.LastSignal, session.SignalReason, session.PeriodEvaluations.Count(x => x.Action is "open_long" or "open_short"), session.PeriodEvaluations.Count(x => x.Action is "close" or "force_close"), paramsSource, true, true);
     }
     private static RealtimeLiveDto BuildLive(AppStateDocument state, StrategyConfigDocument strategyConfig, List<PositionDocument> positions, ApiConnectionDocument? apiConnection, RealtimeSimulationDto simulation, decimal? latestPrice, bool confirmed, RealtimeSessionDocument? liveSession)
     {
@@ -417,7 +779,9 @@ public sealed class RealtimeService
         var signal = liveSession?.LastSignal ?? (confirmed ? simulation.LastSignal : "hold");
         var confirmationStatus = liveSession is null
             ? confirmed ? "未启动实盘" : "未确认策略"
-            : signal is "open_long" or "open_short" or "close" or "force_close" ? "等待执行" : liveSession.Status;
+            : !string.Equals(liveSession.Status, "running", StringComparison.OrdinalIgnoreCase)
+                ? liveSession.Status
+                : signal is "open_long" or "open_short" or "close" or "force_close" ? "等待执行" : liveSession.Status;
         var triggerPrice = liveSession?.LastExecutionPrice ?? latestPrice ?? simulation.Candles.LastOrDefault()?.Close;
         var riskNote = BuildRiskNote(state, hasAccountConnection, positions.Count);
         if (confirmed && !strategyConfig.Enabled) confirmationStatus = "未启用策略";
@@ -428,7 +792,7 @@ public sealed class RealtimeService
     {
         var parameters = new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage);
         var summary = BuildSessionSummary(parameters, session);
-        return new RealtimeLiveSessionDto(session.SessionId, session.Mode, session.InstId, session.Bar, session.StrategyType, parameters, session.ParamsSource, session.StartedAt, session.Status, session.PositionSide, session.EntryPrice, session.EntryTs, session.PositionSize, session.AllocatedCapital, session.EntryNotionalUsd, session.LastSettledCandleTs, session.LastSignal, session.SignalReason, session.LastOrderId, session.LastExecutionPrice, session.LastExecutionTs, session.LastExecutionSize, session.ErrorCode, session.ErrorMessage, summary, session.TradePoints, session.TradePoints.LastOrDefault(), session.PeriodEvaluations.LastOrDefault());
+        return new RealtimeLiveSessionDto(session.SessionId, session.Mode, session.InstId, session.Bar, session.StrategyType, parameters, session.AutoOptimizeParameters, session.LastOptimizationResult, session.LastOptimizationReason, session.ParamsSource, session.StartedAt, session.Status, session.PositionSide, session.EntryPrice, session.EntryTs, session.PositionSize, session.AllocatedCapital, session.EntryNotionalUsd, session.LastSettledCandleTs, session.LastSignal, session.SignalReason, session.LastOrderId, session.LastExecutionPrice, session.LastExecutionTs, session.LastExecutionSize, session.ErrorCode, session.ErrorMessage, summary, session.TradePoints, session.PeriodEvaluations, session.TradePoints.LastOrDefault(), session.PeriodEvaluations.LastOrDefault());
     }
 
     private static BacktestResultDto? BuildSessionSummary(StrategyParameterSetDto parameters, RealtimeSessionDocument session)
@@ -498,6 +862,29 @@ public sealed class RealtimeService
         var startIndex = candles.FindIndex(x => x.Ts >= startMs); return startIndex < 0 ? candles.Count : startIndex;
     }
 
+    private static void AlignLiveStrategyStateWithSimulation(RealtimeSessionDocument liveSession, RealtimeSessionDocument? simulatedSession)
+    {
+        if (simulatedSession is null) return;
+        if (!string.Equals(liveSession.Mode, "live", StringComparison.OrdinalIgnoreCase)) return;
+        if (!string.Equals(liveSession.PositionSide, "long", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(liveSession.PositionSide, "short", StringComparison.OrdinalIgnoreCase)) return;
+        if (!string.Equals(simulatedSession.PositionSide, liveSession.PositionSide, StringComparison.OrdinalIgnoreCase)) return;
+        if (!string.Equals(simulatedSession.InstId, liveSession.InstId, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(simulatedSession.Bar, liveSession.Bar, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(simulatedSession.StrategyType, liveSession.StrategyType, StringComparison.OrdinalIgnoreCase)) return;
+        if (!SameParams(
+                new StrategyParameterSetDto(simulatedSession.StopLossPct, simulatedSession.TrailingDrawdownPct, simulatedSession.Leverage),
+                new StrategyParameterSetDto(liveSession.StopLossPct, liveSession.TrailingDrawdownPct, liveSession.Leverage))) return;
+        if (simulatedSession.EntryTs != liveSession.EntryTs || !simulatedSession.EntryPrice.HasValue) return;
+
+        liveSession.ExecutionEntryPrice ??= liveSession.EntryPrice;
+        liveSession.ExecutionEntryTs ??= liveSession.EntryTs;
+        liveSession.EntryPrice = simulatedSession.EntryPrice;
+        liveSession.EntryTs = simulatedSession.EntryTs;
+        liveSession.PeakPrice = simulatedSession.PeakPrice;
+        liveSession.TroughPrice = simulatedSession.TroughPrice;
+    }
+
     private static string NormalizeInstId(string? instId, List<PositionDocument> positions, BacktestDocument? latestBacktest)
     {
         if (!string.IsNullOrWhiteSpace(instId)) return instId.Trim().ToUpperInvariant();
@@ -506,9 +893,14 @@ public sealed class RealtimeService
 
     private static string NormalizeBar(string? bar) => string.IsNullOrWhiteSpace(bar) ? "1m" : SupportedBars.Contains(bar) ? bar : "1m";
 
-    private static bool IsMatchingSession(RealtimeSessionDocument? session, string instId, string bar, string strategyType) => session is not null && string.Equals(session.Status, "running", StringComparison.OrdinalIgnoreCase) && string.Equals(session.Mode, "simulated", StringComparison.OrdinalIgnoreCase) && string.Equals(session.InstId, instId, StringComparison.OrdinalIgnoreCase) && string.Equals(session.Bar, bar, StringComparison.OrdinalIgnoreCase) && string.Equals(session.StrategyType, strategyType, StringComparison.OrdinalIgnoreCase);
+    private static bool IsMatchingSession(RealtimeSessionDocument? session, string instId, string bar, string strategyType) => session is not null && string.Equals(session.Mode, "simulated", StringComparison.OrdinalIgnoreCase) && string.Equals(session.InstId, instId, StringComparison.OrdinalIgnoreCase) && string.Equals(session.Bar, bar, StringComparison.OrdinalIgnoreCase) && string.Equals(session.StrategyType, strategyType, StringComparison.OrdinalIgnoreCase);
 
-    private static RealtimeSessionDto ToSessionDto(RealtimeSessionDocument session) => new(session.SessionId, session.Mode, session.InstId, session.Bar, session.StrategyType, new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage), session.ParamsSource, session.StartedAt, session.Status, session.PositionSide, session.EntryPrice, session.EntryTs, session.PeakPrice, session.TroughPrice, session.PositionSize, session.AllocatedCapital, session.EntryNotionalUsd, session.LastSettledCandleTs, session.LastOrderId, session.LastExecutionPrice, session.LastExecutionTs, session.LastExecutionSize, session.ErrorCode, session.ErrorMessage);
+    private static bool HasOpenPosition(RealtimeSessionDocument? session) =>
+        session is not null
+        && (string.Equals(session.PositionSide, "long", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(session.PositionSide, "short", StringComparison.OrdinalIgnoreCase));
+
+    private static RealtimeSessionDto ToSessionDto(RealtimeSessionDocument session) => new(session.SessionId, session.Mode, session.InstId, session.Bar, session.StrategyType, new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage), session.AutoOptimizeParameters, session.LastOptimizationResult, session.LastOptimizationReason, session.ParamsSource, session.StartedAt, session.Status, session.PositionSide, session.EntryPrice, session.EntryTs, session.PeakPrice, session.TroughPrice, session.PositionSize, session.AllocatedCapital, session.EntryNotionalUsd, session.LastSettledCandleTs, session.LastOrderId, session.LastExecutionPrice, session.LastExecutionTs, session.LastExecutionSize, session.ErrorCode, session.ErrorMessage);
 
     private static bool SameParams(StrategyParameterSetDto left, StrategyParameterSetDto right) => Math.Abs(left.StopLossPct - right.StopLossPct) < 0.0001m && Math.Abs(left.TrailingDrawdownPct - right.TrailingDrawdownPct) < 0.0001m && Math.Abs(left.Leverage - right.Leverage) < 0.0001m;
     private static decimal ClampPercent(decimal value) => Math.Clamp(value, 0.01m, 100m);
@@ -596,3 +988,4 @@ public sealed class RealtimeService
 }
 
 internal sealed record LiveOrderPlan(decimal Size, decimal AllocatedCapital, decimal EntryNotionalUsd);
+internal sealed record LivePositionSnapshot(string Side, decimal Size, decimal EntryPrice);

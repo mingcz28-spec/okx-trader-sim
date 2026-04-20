@@ -19,12 +19,12 @@ type AppContext = {
 const fallbackParams = { stopLossPct: 1, trailingDrawdownPct: 2, leverage: 3 };
 const fallbackParameterDefinitions = [
   { id: 'stopLossPct', label: '止损比例', description: '价格偏离入场价达到该比例时退出。', value: 1, unit: '%' },
-  { id: 'trailingDrawdownPct', label: '移动回撤比例', description: '从有利方向极值回撤达到该比例时退出。', value: 2, unit: '%' },
+  { id: 'trailingDrawdownPct', label: '浮盈回撤比例', description: '从开仓后最大浮盈回吐达到该比例时退出。', value: 2, unit: '%' },
   { id: 'leverage', label: '杠杆', description: '收益按该杠杆放大，同时扣除双边 taker 费率。', value: 3, unit: 'x' },
 ];
 
 const fallbackStrategies: StrategyDefinition[] = [
-  { id: 'buy-sell', name: '买入卖出策略', description: '前 3 根结算价递增开多，递减开空；平仓使用止损和移动回撤。', status: 'active', supportsBacktest: true, supportsRealtime: true, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
+  { id: 'buy-sell', name: '买入卖出策略', description: '过去 20 个点的均值曲线向上开多，向下开空；平仓使用止损和浮盈回撤。', status: 'active', supportsBacktest: true, supportsRealtime: true, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
   { id: 'trend', name: '趋势跟随策略', description: '价格站上 20 均线并接近前高时开多，跌回均线或触发止损后退出。', status: 'active', supportsBacktest: true, supportsRealtime: true, defaultParams: { stopLossPct: 1.2, trailingDrawdownPct: 2.5, leverage: 3 }, parameters: fallbackParameterDefinitions },
   { id: 'mean-reversion', name: '均值回归策略', description: '价格偏离均值后等待回归确认，当前待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
   { id: 'breakout', name: '突破策略', description: '价格突破关键区间后跟随入场，当前待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
@@ -32,7 +32,7 @@ const fallbackStrategies: StrategyDefinition[] = [
 
 function tradeReason(reason: string) {
   if (reason === 'stop_loss') return '止损';
-  if (reason === 'trailing_exit') return '移动回撤';
+  if (reason === 'trailing_exit') return '浮盈回撤';
   if (reason === 'force_close') return '强制平仓';
   return reason;
 }
@@ -54,7 +54,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
   });
   const [running, setRunning] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const instId = state.positions[0]?.symbol || state.backtest?.instId || 'RAVE-USDT-SWAP';
+  const instId = state.backtest?.instId || 'RAVE-USDT-SWAP';
   const backtest = state.backtest;
   const selectedStrategy = strategies.find((item) => item.id === strategy) ?? strategies[0];
   const canRunStrategy = selectedStrategy.status === 'active' && selectedStrategy.supportsBacktest;
@@ -174,7 +174,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
     try {
       const next = await api.saveStrategyConfig({ ...strategyConfig, strategyType: strategy });
       app.setState({ ...state, strategyConfig: next });
-      app.setMessage('策略参数已保存。');
+      app.setMessage('策略参数已保存；已运行的实时模拟或实盘会话不会自动切换参数。');
     } catch (err) {
       app.setError(err instanceof Error ? err.message : '保存策略失败');
     }

@@ -154,6 +154,7 @@ export type ConfirmRealtimeSessionPayload = {
   stopLossPct: number;
   trailingDrawdownPct: number;
   leverage: number;
+  autoOptimizeParameters?: boolean;
 };
 
 export type LiveRealtimeSessionPayload = ConfirmRealtimeSessionPayload;
@@ -207,6 +208,9 @@ export type RealtimeSession = {
   bar: BacktestBar;
   strategyType: StrategyType;
   params: StrategyParameterSet;
+  autoOptimizeParameters: boolean;
+  lastOptimizationResult?: BacktestResult | null;
+  lastOptimizationReason?: string | null;
   paramsSource: string;
   startedAt: string;
   status: string;
@@ -234,6 +238,9 @@ export type RealtimeLiveSession = {
   bar: BacktestBar;
   strategyType: StrategyType;
   params: StrategyParameterSet;
+  autoOptimizeParameters: boolean;
+  lastOptimizationResult?: BacktestResult | null;
+  lastOptimizationReason?: string | null;
   paramsSource: string;
   startedAt: string;
   status: string;
@@ -254,6 +261,7 @@ export type RealtimeLiveSession = {
   errorMessage?: string | null;
   summary?: BacktestResult | null;
   tradePoints: BacktestTradePoint[];
+  periodEvaluations: RealtimePeriodEvaluation[];
   lastTrade?: BacktestTradePoint | null;
   lastEvaluation?: RealtimePeriodEvaluation | null;
 };

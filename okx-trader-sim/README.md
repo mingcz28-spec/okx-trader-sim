@@ -77,9 +77,9 @@ npm run dev:frontend
 - `Mongo__DatabaseName=okx_trader_sim`
 - `Security__OkxSecretEncryptionKey=replace-with-a-long-stable-local-development-secret`
 - `Cors__AllowedOrigins__0=http://localhost:5173`
-- `VITE_API_BASE_URL=http://localhost:5088`
+- `VITE_API_BASE_URL=http://localhost:5088`（通常不需要设置）
 
-本地 Vite 开发时，如果不设置 `VITE_API_BASE_URL`，前端默认请求 `http://localhost:5088`。
+本地 Vite 开发时，建议不设置 `VITE_API_BASE_URL`。前端请求同源 `/api/...`，由 Vite 代理转发到 `http://localhost:5088`。生产单服务部署也保持不设置，让前端直接请求同域名下的 `/api/...`。
 
 ## Railway 部署
 

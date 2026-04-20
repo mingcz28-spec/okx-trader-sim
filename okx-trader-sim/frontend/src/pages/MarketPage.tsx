@@ -286,7 +286,7 @@ export function MarketPage({ app }: { app: AppContext }) {
         <div className="accountSummaryGrid">
           <div><span>账户权益</span><strong>{formatNumber(state.equity, 4)}</strong></div>
           <div><span>可用保证金</span><strong>{formatNumber(state.availableMargin, 4)}</strong></div>
-          <div><span>今日盈亏</span><strong className={state.dailyPnl >= 0 ? 'good' : 'bad'}>{formatNumber(state.dailyPnl, 4)}</strong></div>
+          <div><span>持仓浮盈</span><strong className={state.dailyPnl >= 0 ? 'good' : 'bad'}>{formatNumber(state.dailyPnl, 4)}</strong></div>
           <div><span>当前持仓</span><strong>{state.positions.length}</strong></div>
         </div>
         {state.balanceDetails.length ? (

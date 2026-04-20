@@ -31,12 +31,7 @@ public sealed class TradeService
             return (false, "MAX_DAILY_LOSS_EXCEEDED", "今日亏损已触达风控上限，拒绝新模拟开仓。", null);
         }
 
-        var orders = await _repository.GetOrderHistoryAsync();
-        var consecutiveLosses = orders.TakeWhile(x => x.State == "loss").Count();
-        if (consecutiveLosses >= risk.MaxConsecutiveLosses)
-        {
-            return (false, "MAX_CONSECUTIVE_LOSSES_EXCEEDED", "连续亏损次数已触达风控上限，拒绝新模拟开仓。", null);
-        }
+        // OKX order state is execution status, not realized PnL; do not infer consecutive losses from it.
 
         var side = request.Side == "sell" ? "short" : "long";
         var symbol = string.IsNullOrWhiteSpace(request.Symbol) ? "BTC-USDT-SWAP" : request.Symbol.Trim().ToUpperInvariant();
@@ -70,7 +65,7 @@ public sealed class TradeService
         var strategy = await _repository.GetStrategyConfigAsync();
         strategy.EntryPrice = basePrice;
         strategy.HighestPriceSinceEntry = markPrice;
-        strategy.LastSignal = "buy";
+        strategy.LastSignal = side == "short" ? "open_short" : "open_long";
         strategy.Enabled = true;
         await _repository.SaveStrategyConfigAsync(strategy);
 
@@ -88,7 +83,7 @@ public sealed class TradeService
         var strategy = await _repository.GetStrategyConfigAsync();
         strategy.EntryPrice = null;
         strategy.HighestPriceSinceEntry = null;
-        strategy.LastSignal = "sell";
+        strategy.LastSignal = "close";
         await _repository.SaveStrategyConfigAsync(strategy);
 
         return await _stateService.GetStateAsync();
