@@ -21,6 +21,9 @@ public sealed class MongoDbContext
     public IMongoCollection<PositionDocument> Positions => Database.GetCollection<PositionDocument>("positions");
     public IMongoCollection<BalanceDetailDocument> Balances => Database.GetCollection<BalanceDetailDocument>("balances");
     public IMongoCollection<OrderHistoryDocument> OrderHistory => Database.GetCollection<OrderHistoryDocument>("orderHistory");
+    public IMongoCollection<OkxFillDocument> OkxFills => Database.GetCollection<OkxFillDocument>("okxFills");
+    public IMongoCollection<OkxPositionHistoryDocument> OkxPositionHistory => Database.GetCollection<OkxPositionHistoryDocument>("okxPositionHistory");
+    public IMongoCollection<OkxTradeFeeDocument> OkxTradeFees => Database.GetCollection<OkxTradeFeeDocument>("okxTradeFees");
     public IMongoCollection<BacktestDocument> Backtests => Database.GetCollection<BacktestDocument>("backtests");
     public IMongoCollection<RealtimeSessionDocument> RealtimeSessions => Database.GetCollection<RealtimeSessionDocument>("realtimeSessions");
     public IMongoCollection<RawOkxPayloadDocument> RawOkxPayloads => Database.GetCollection<RawOkxPayloadDocument>("rawOkxPayloads");

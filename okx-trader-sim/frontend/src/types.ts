@@ -54,12 +54,17 @@ export type OrderHistoryItem = {
   id: string;
   symbol: string;
   side: string;
+  posSide?: string | null;
   orderType: string;
   state: string;
   price: number;
   size: number;
   filledSize: number;
   createdAt: string;
+  avgPrice?: number | null;
+  fee?: number | null;
+  feeCcy?: string | null;
+  pnl?: number | null;
 };
 
 export type BacktestResult = {
@@ -118,6 +123,17 @@ export type BacktestTradePoint = {
   executedPrice?: number | null;
   executedSize?: number | null;
   exchangeState?: string | null;
+  entryOrderId?: string | null;
+  exitOrderId?: string | null;
+  entryAvgPx?: number | null;
+  exitAvgPx?: number | null;
+  grossPnl?: number | null;
+  fee?: number | null;
+  fundingFee?: number | null;
+  netPnl?: number | null;
+  netReturn?: number | null;
+  feeRateSource?: string;
+  reconciliationStatus?: string;
 };
 
 export type BacktestSummary = {
@@ -227,6 +243,9 @@ export type RealtimeSession = {
   lastExecutionPrice?: number | null;
   lastExecutionTs?: number | null;
   lastExecutionSize?: number | null;
+  lastTakerFeeRate: number;
+  feeRateSource: string;
+  reconciliationStatus: string;
   errorCode?: string | null;
   errorMessage?: string | null;
 };
@@ -257,6 +276,9 @@ export type RealtimeLiveSession = {
   lastExecutionPrice?: number | null;
   lastExecutionTs?: number | null;
   lastExecutionSize?: number | null;
+  lastTakerFeeRate: number;
+  feeRateSource: string;
+  reconciliationStatus: string;
   errorCode?: string | null;
   errorMessage?: string | null;
   summary?: BacktestResult | null;
@@ -284,6 +306,12 @@ export type RealtimePeriodEvaluation = {
   entryFeeRate: number;
   exitFeeRate: number;
   equity: number;
+  grossPnl?: number | null;
+  fee?: number | null;
+  fundingFee?: number | null;
+  netPnl?: number | null;
+  feeRateSource?: string;
+  reconciliationStatus?: string;
 };
 
 export type RealtimeSimulation = {

@@ -7,9 +7,8 @@ namespace OkxTraderSim.Api.Services;
 public sealed class RealtimeService
 {
     private static readonly HashSet<string> SupportedBars = ["1m", "5m", "15m", "1H", "4H", "1D"];
-    private const decimal EntryFeeRate = StrategyRegistryService.DefaultTakerFeeRate;
-    private const decimal ExitFeeRate = StrategyRegistryService.DefaultTakerFeeRate;
-    private const decimal RoundTripFeeRate = EntryFeeRate + ExitFeeRate;
+    private const decimal FallbackTakerFeeRate = StrategyRegistryService.DefaultTakerFeeRate;
+    private const decimal SimulatedAccountCapital = 1m;
     private const decimal MaxLiveCapitalUsageRate = 0.2m;
     private const int MaxLiveCloseAttempts = 3;
     private static readonly TimeSpan LiveCloseVerificationDelay = TimeSpan.FromMilliseconds(700);
@@ -40,6 +39,7 @@ public sealed class RealtimeService
         var parameters = BuildParameters(request.StopLossPct, request.TrailingDrawdownPct, request.Leverage, strategy.DefaultParams);
         var (defaultParams, defaultSource) = ResolveParameters(latestBacktest, strategy, strategyType, instId, bar);
         var source = SameParams(parameters, defaultParams) ? defaultSource : "manual";
+        var fee = await ResolveTakerFeeRateAsync(instId, "live");
         var previousSession = await _repository.GetRealtimeSessionAsync();
         if (HasOpenPosition(previousSession))
         {
@@ -53,7 +53,8 @@ public sealed class RealtimeService
             StopLossPct = parameters.StopLossPct, TrailingDrawdownPct = parameters.TrailingDrawdownPct, Leverage = parameters.Leverage,
             AutoOptimizeParameters = request.AutoOptimizeParameters == true,
             ParamsSource = source, StartedAt = DateTime.UtcNow, Status = "running", PositionSide = "flat", RealizedEquity = 1m,
-            LastEquity = 1m, LastSettledCandleTs = candles.LastOrDefault()?.Ts, LastSignal = "hold", SignalReason = "实时模拟已启动，将从下一根已收盘 K 线开始执行。", PeriodEvaluations = [], TradePoints = []
+            LastEquity = 1m, LastSettledCandleTs = candles.LastOrDefault()?.Ts, LastSignal = "hold", SignalReason = "实时模拟已启动，将从下一根已收盘 K 线开始执行。",
+            LastTakerFeeRate = fee.Rate, FeeRateSource = fee.Source, ReconciliationStatus = "model", PeriodEvaluations = [], TradePoints = []
         };
         await _repository.SaveRealtimeSessionAsync(session);
         var strategyConfig = await _repository.GetStrategyConfigAsync();
@@ -98,6 +99,7 @@ public sealed class RealtimeService
         }
 
         await SyncLiveLeverageAsync(simulatedSession.InstId, liveParams.Leverage);
+        var fee = await ResolveTakerFeeRateAsync(simulatedSession.InstId, "live");
         var candles = await _okxClient.GetHistoryCandlesAsync(simulatedSession.InstId, simulatedSession.Bar, 120, 3);
         var session = new RealtimeSessionDocument
         {
@@ -105,7 +107,8 @@ public sealed class RealtimeService
             StopLossPct = liveParams.StopLossPct, TrailingDrawdownPct = liveParams.TrailingDrawdownPct, Leverage = liveParams.Leverage,
             AutoOptimizeParameters = request.AutoOptimizeParameters == true,
             ParamsSource = liveParamsSource, StartedAt = DateTime.UtcNow, Status = "running", PositionSide = "flat", RealizedEquity = 1m,
-            LastEquity = 1m, LastSettledCandleTs = candles.LastOrDefault()?.Ts, LastSignal = "hold", SignalReason = "实盘自动交易已启动，将从下一根已收盘 K 线开始执行。", PeriodEvaluations = [], TradePoints = []
+            LastEquity = 1m, LastSettledCandleTs = candles.LastOrDefault()?.Ts, LastSignal = "hold", SignalReason = "实盘自动交易已启动，将从下一根已收盘 K 线开始执行。",
+            LastTakerFeeRate = fee.Rate, FeeRateSource = fee.Source, ReconciliationStatus = "pending_fills", PeriodEvaluations = [], TradePoints = []
         };
         await _repository.SaveLiveRealtimeSessionAsync(session);
         await SetStrategyStatusFromLiveSessionsAsync();
@@ -237,6 +240,7 @@ public sealed class RealtimeService
     private async Task SettleSimulatedSessionAsync(RealtimeSessionDocument session, ITradingStrategy strategy, List<CandlePointDto> candles, decimal? latestPrice, bool forceExit)
     {
         if (candles.Count == 0) return;
+        await RefreshSessionFeeRateAsync(session, "live");
         var startIndex = ResolveSettlementStartIndex(session, candles);
         for (var i = startIndex; i < candles.Count; i++)
         {
@@ -288,6 +292,7 @@ public sealed class RealtimeService
     {
         if (candles.Count == 0 || !string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)) return;
         if (!string.Equals(session.Status, "running", StringComparison.OrdinalIgnoreCase) && !forceExit) return;
+        await RefreshSessionFeeRateAsync(session, "live");
         var startIndex = ResolveSettlementStartIndex(session, candles);
         for (var i = startIndex; i < candles.Count; i++)
         {
@@ -310,6 +315,7 @@ public sealed class RealtimeService
                     var fallbackEntry = session.EntryPrice ?? session.ExecutionEntryPrice ?? candles.LastOrDefault()?.Close ?? 0m;
                     var requestedPrice = latestPrice ?? candles.LastOrDefault()?.Close ?? fallbackEntry;
                     var executionPrice = await ExecuteLiveCloseAsync(session, "force_close", "已按最新参考价强制退出实盘持仓。", requestedPrice);
+                    await TryReconcilePositionHistoryAsync(session);
                     var closeTs = session.LastExecutionTs ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     var forceCandle = new CandlePointDto(closeTs, executionPrice, executionPrice, executionPrice, executionPrice);
                     AppendEvaluation(session, forceCandle, "force_close", executionPrice, "已按最新参考价强制退出实盘持仓。", true);
@@ -332,6 +338,7 @@ public sealed class RealtimeService
                 var fallbackEntry = session.EntryPrice ?? session.ExecutionEntryPrice ?? 0m;
                 var requestedPrice = await ReadLatestPriceAsync(session.InstId, []) ?? fallbackEntry;
                 var executionPrice = await ExecuteLiveCloseAsync(session, "force_close", "已按最新参考价强制退出实盘持仓。", requestedPrice);
+                await TryReconcilePositionHistoryAsync(session);
                 var closeTs = session.LastExecutionTs ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var forceCandle = new CandlePointDto(closeTs, executionPrice, executionPrice, executionPrice, executionPrice);
                 AppendEvaluation(session, forceCandle, "force_close", executionPrice, "已按最新参考价强制退出实盘持仓。", true);
@@ -415,7 +422,8 @@ public sealed class RealtimeService
             var closeReason = ResolveCloseReason(session, candle, decision);
             var strategyClosePrice = decision.ExecutionPrice ?? candle.Close;
             _ = await ExecuteLiveCloseAsync(session, "close", closeReason, strategyClosePrice);
-            AppendEvaluation(session, candle, decision.Action, strategyClosePrice, closeReason, true);
+            await TryReconcilePositionHistoryAsync(session);
+            AppendEvaluation(session, candle, decision.Action, session.ExitAvgPx ?? session.LastExecutionPrice ?? strategyClosePrice, closeReason, true);
             ApplyClose(session, session.LastExecutionTs ?? candle.Ts, strategyClosePrice, "close", closeReason);
         }
         else AppendEvaluation(session, candle, decision.Action, decision.ExecutionPrice, decision.Reason);
@@ -504,9 +512,17 @@ public sealed class RealtimeService
         var request = new OkxPlaceOrderRequest { InstId = session.InstId, TdMode = "cross", OrdType = "market", PosSide = decision.Action == "open_long" ? "long" : "short", Side = decision.Action == "open_long" ? "buy" : "sell", Size = orderPlan.Size.ToString(CultureInfo.InvariantCulture), ReduceOnly = false };
         var response = await _okxClient.PlaceOrderAsync(request, "live");
         var data = response.Data.FirstOrDefault();
-        session.LastOrderId = data?.OrdId; session.LastExecutionPrice = price; session.LastExecutionTs = candle.Ts; session.LastExecutionSize = orderPlan.Size;
-        session.PositionSize = orderPlan.Size; session.AllocatedCapital = orderPlan.AllocatedCapital; session.EntryNotionalUsd = orderPlan.EntryNotionalUsd;
-        return price;
+        var orderId = data?.OrdId;
+        var fills = await FetchAndStoreOrderFillsAsync(session.InstId, orderId);
+        var actualPrice = fills?.AveragePrice > 0m ? fills.AveragePrice : price;
+        session.LastOrderId = orderId; session.EntryOrderId = orderId; session.LastExecutionPrice = actualPrice; session.LastExecutionTs = fills?.LastFillTs ?? candle.Ts; session.LastExecutionSize = fills?.Size > 0m ? fills.Size : orderPlan.Size;
+        session.PositionSize = session.LastExecutionSize; session.AllocatedCapital = orderPlan.AllocatedCapital; session.EntryNotionalUsd = orderPlan.EntryNotionalUsd;
+        session.EntryAvgPx = actualPrice;
+        session.EntryFillSize = session.LastExecutionSize;
+        session.EntryFee = fills?.Fee;
+        session.EntryFeeCcy = fills?.FeeCcy;
+        session.ReconciliationStatus = fills is null ? "pending_fills" : "pending_position_history";
+        return actualPrice;
     }
 
     private async Task<decimal> ExecuteLiveCloseAsync(RealtimeSessionDocument session, string action, string reason, decimal fallbackPrice)
@@ -514,6 +530,11 @@ public sealed class RealtimeService
         var currentPrice = await _okxClient.GetLatestPriceAsync(session.InstId) ?? fallbackPrice;
         var closeLong = string.Equals(session.PositionSide, "long", StringComparison.OrdinalIgnoreCase);
         var totalRequestedSize = 0m;
+        var totalFilledSize = 0m;
+        var weightedExitPrice = 0m;
+        var totalExitFee = 0m;
+        var totalFillPnl = 0m;
+        string? exitFeeCcy = null;
         string? lastOrderId = null;
 
         for (var attempt = 0; attempt < MaxLiveCloseAttempts; attempt++)
@@ -545,11 +566,27 @@ public sealed class RealtimeService
             var response = await _okxClient.PlaceOrderAsync(request, "live");
             var data = response.Data.FirstOrDefault();
             lastOrderId = data?.OrdId ?? lastOrderId;
+            var fills = await FetchAndStoreOrderFillsAsync(session.InstId, data?.OrdId);
+            if (fills is not null && fills.Size > 0m)
+            {
+                weightedExitPrice += fills.AveragePrice * fills.Size;
+                totalFilledSize += fills.Size;
+                totalExitFee += fills.Fee;
+                totalFillPnl += fills.FillPnl;
+                exitFeeCcy ??= fills.FeeCcy;
+                currentPrice = fills.AveragePrice;
+            }
             totalRequestedSize += position.Size;
             session.LastOrderId = lastOrderId;
             session.LastExecutionPrice = currentPrice;
             session.LastExecutionTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            session.LastExecutionSize = totalRequestedSize;
+            session.LastExecutionSize = totalFilledSize > 0m ? totalFilledSize : totalRequestedSize;
+            session.ExitOrderId = lastOrderId;
+            session.ExitAvgPx = totalFilledSize > 0m ? weightedExitPrice / totalFilledSize : currentPrice;
+            session.ExitFillSize = totalFilledSize > 0m ? totalFilledSize : totalRequestedSize;
+            session.ExitFee = totalFilledSize > 0m ? totalExitFee : null;
+            session.ExitFeeCcy = exitFeeCcy;
+            session.LastGrossPnl = totalFillPnl == 0m ? null : totalFillPnl;
             session.LastSignal = action;
             session.SignalReason = reason;
 
@@ -564,6 +601,17 @@ public sealed class RealtimeService
         }
 
         session.PositionSize = null;
+        if (totalFilledSize > 0m)
+        {
+            session.LastExecutionPrice = weightedExitPrice / totalFilledSize;
+            session.LastExecutionSize = totalFilledSize;
+            session.ExitAvgPx = session.LastExecutionPrice;
+            session.ExitFillSize = totalFilledSize;
+            session.ExitFee = totalExitFee;
+            session.ExitFeeCcy = exitFeeCcy;
+            session.LastGrossPnl = totalFillPnl == 0m ? null : totalFillPnl;
+            session.ReconciliationStatus = "pending_position_history";
+        }
         return currentPrice;
     }
 
@@ -572,6 +620,115 @@ public sealed class RealtimeService
         var side = session.PositionSide;
         return (await ReadLivePositionSnapshotsAsync(session.InstId))
             .FirstOrDefault(x => string.Equals(x.Side, side, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<FillAggregate?> FetchAndStoreOrderFillsAsync(string instId, string? orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId)) return null;
+        try
+        {
+            var response = await _okxClient.GetFillsHistoryAsync("live", instId, orderId, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow);
+            if (response.Code != "0") return null;
+            var fills = response.Data.Select(ToFillDocument).Where(x => x.OrderId == orderId).ToList();
+            await _repository.UpsertOkxFillsAsync(fills, DateTime.UtcNow.AddDays(-1));
+            return PnlCalculator.AggregateFills(fills);
+        }
+        catch
+        {
+            var cached = await _repository.GetOkxFillsByOrderIdAsync(orderId);
+            return PnlCalculator.AggregateFills(cached);
+        }
+    }
+
+    private async Task TryReconcilePositionHistoryAsync(RealtimeSessionDocument session)
+    {
+        try
+        {
+            var response = await _okxClient.GetPositionsHistoryAsync("live", session.InstId, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow);
+            if (response.Code != "0") return;
+            var docs = response.Data.Select(ToPositionHistoryDocument).ToList();
+            await _repository.UpsertOkxPositionHistoryAsync(docs, DateTime.UtcNow.AddDays(-1));
+            var closedAt = session.LastExecutionTs.HasValue
+                ? DateTimeOffset.FromUnixTimeMilliseconds(session.LastExecutionTs.Value).UtcDateTime
+                : DateTime.UtcNow;
+            var match = docs
+                .Where(x => string.Equals(x.InstId, session.InstId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(x.PosSide, session.PositionSide, StringComparison.OrdinalIgnoreCase)
+                    && x.UpdatedAt >= closedAt.AddMinutes(-10)
+                    && x.UpdatedAt <= closedAt.AddMinutes(10))
+                .OrderBy(x => Math.Abs((x.UpdatedAt - closedAt).TotalMilliseconds))
+                .FirstOrDefault();
+            if (match is null) return;
+
+            session.LastGrossPnl = match.Pnl;
+            session.LastFundingFee = match.FundingFee;
+            session.LastNetPnl = match.RealizedPnl;
+            var totalFee = Math.Abs(match.Fee);
+            if (totalFee > 0m)
+            {
+                session.ExitFee = Math.Max(0m, totalFee - Math.Abs(session.EntryFee ?? 0m));
+                session.LastFee = totalFee;
+            }
+            if (match.CloseAvgPx > 0m) session.ExitAvgPx = match.CloseAvgPx;
+            if (match.OpenAvgPx > 0m && !session.EntryAvgPx.HasValue) session.EntryAvgPx = match.OpenAvgPx;
+            if (match.CloseTotalPos > 0m) session.ExitFillSize = match.CloseTotalPos;
+            session.ReconciliationStatus = "reconciled";
+        }
+        catch
+        {
+            if (string.Equals(session.ReconciliationStatus, "model", StringComparison.OrdinalIgnoreCase))
+            {
+                session.ReconciliationStatus = "pending_position_history";
+            }
+        }
+    }
+
+    private async Task RefreshSessionFeeRateAsync(RealtimeSessionDocument session, string mode)
+    {
+        var fee = await ResolveTakerFeeRateAsync(session.InstId, mode);
+        session.LastTakerFeeRate = fee.Rate;
+        session.FeeRateSource = fee.Source;
+    }
+
+    private async Task<(decimal Rate, string Source)> ResolveTakerFeeRateAsync(string instId, string mode)
+    {
+        var id = $"SWAP:{instId}";
+        try
+        {
+            var response = await _okxClient.GetTradeFeeAsync(mode, instId);
+            if (response.Code == "0")
+            {
+                var data = response.Data.FirstOrDefault();
+                var takerRaw = ParseDecimal(data?.TakerU);
+                if (takerRaw == 0m) takerRaw = ParseDecimal(data?.Taker);
+                var makerRaw = ParseDecimal(data?.MakerU);
+                if (makerRaw == 0m) makerRaw = ParseDecimal(data?.Maker);
+                var taker = Math.Abs(takerRaw);
+                var maker = Math.Abs(makerRaw);
+                if (taker > 0m)
+                {
+                    await _repository.SaveOkxTradeFeeAsync(new OkxTradeFeeDocument
+                    {
+                        Id = id,
+                        InstType = data?.InstType ?? "SWAP",
+                        InstId = data?.InstId ?? instId,
+                        InstFamily = data?.InstFamily,
+                        MakerFeeRate = maker,
+                        TakerFeeRate = taker,
+                        Source = "okx"
+                    });
+                    return (taker, "okx");
+                }
+            }
+        }
+        catch
+        {
+            // Use cached or fallback below. Trading should not stop just because fee lookup is delayed.
+        }
+
+        var cached = await _repository.GetOkxTradeFeeAsync(id);
+        if (cached is not null && cached.TakerFeeRate > 0m) return (cached.TakerFeeRate, cached.Source);
+        return (FallbackTakerFeeRate, "fallback");
     }
 
     private async Task<List<LivePositionSnapshot>> ReadLivePositionSnapshotsAsync(string instId)
@@ -626,6 +783,14 @@ public sealed class RealtimeService
             {
                 var side = decision.Action == "open_long" ? "long" : "short"; var executionPrice = decision.ExecutionPrice ?? candle.Close;
                 session.PositionSide = side; session.EntryPrice = executionPrice; session.EntryTs = candle.Ts; session.PeakPrice = candle.Close; session.TroughPrice = candle.Close;
+                session.AllocatedCapital = SimulatedAccountCapital;
+                session.PositionSize = PnlCalculator.CalculateSimulatedSize(SimulatedAccountCapital, session.Leverage, executionPrice, 1m);
+                session.EntryNotionalUsd = SimulatedAccountCapital * session.Leverage;
+                session.EntryAvgPx = executionPrice;
+                session.EntryFillSize = session.PositionSize;
+                session.EntryFee = session.EntryNotionalUsd * session.LastTakerFeeRate;
+                session.EntryFeeCcy = "USDT";
+                session.ReconciliationStatus = "model";
             }
             AppendEvaluation(session, candle, decision.Action, decision.ExecutionPrice, decision.Reason); session.LastSettledCandleTs = candle.Ts; return;
         }
@@ -713,12 +878,52 @@ public sealed class RealtimeService
             return;
         }
 
-        var grossRet = CalculateGrossReturn(session.PositionSide, entryPrice.Value, executionPrice, session.Leverage);
-        var netRet = grossRet - RoundTripFeeRate;
+        var pnl = CalculateSessionPnl(session, executionPrice);
+        var grossRet = pnl.GrossReturn;
+        var netRet = pnl.NetReturn;
         var actualExecutionPrice = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)
-            ? session.LastExecutionPrice ?? executionPrice
+            ? session.ExitAvgPx ?? session.LastExecutionPrice ?? executionPrice
             : executionPrice;
-        session.TradePoints.Add(new BacktestTradePointDto(entryTs.Value, entryPrice.Value, ts, executionPrice, netRet, action == "force_close" ? "force_close" : NormalizeReason(reason), session.PositionSide, grossRet, netRet, session.Leverage, RoundTripFeeRate, EntryFeeRate, ExitFeeRate, session.LastOrderId, session.Mode, action, session.PositionSide, actualExecutionPrice, session.LastExecutionSize, "filled"));
+        session.LastGrossPnl = pnl.GrossPnl;
+        session.LastFee = pnl.EntryFee + pnl.ExitFee;
+        session.LastFundingFee = pnl.FundingFee;
+        session.LastNetPnl = pnl.NetPnl;
+        session.LastNetReturn = pnl.NetReturn;
+        var status = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)
+            ? session.ReconciliationStatus
+            : "model";
+        session.TradePoints.Add(new BacktestTradePointDto(
+            entryTs.Value,
+            entryPrice.Value,
+            ts,
+            executionPrice,
+            netRet,
+            action == "force_close" ? "force_close" : NormalizeReason(reason),
+            session.PositionSide,
+            grossRet,
+            netRet,
+            session.Leverage,
+            pnl.FeeCostRate,
+            session.LastTakerFeeRate,
+            session.LastTakerFeeRate,
+            session.LastOrderId,
+            session.Mode,
+            action,
+            session.PositionSide,
+            actualExecutionPrice,
+            session.LastExecutionSize,
+            "filled",
+            session.EntryOrderId,
+            session.ExitOrderId ?? session.LastOrderId,
+            session.EntryAvgPx,
+            session.ExitAvgPx ?? actualExecutionPrice,
+            pnl.GrossPnl,
+            pnl.EntryFee + pnl.ExitFee,
+            pnl.FundingFee,
+            pnl.NetPnl,
+            pnl.NetReturn,
+            session.FeeRateSource,
+            status));
         session.RealizedEquity *= 1m + netRet; session.LastEquity = session.RealizedEquity; ClearPositionState(session, action, reason);
     }
 
@@ -729,6 +934,11 @@ public sealed class RealtimeService
         session.EntryTs = null;
         session.ExecutionEntryPrice = null;
         session.ExecutionEntryTs = null;
+        session.EntryOrderId = null;
+        session.EntryAvgPx = null;
+        session.EntryFillSize = null;
+        session.EntryFee = null;
+        session.EntryFeeCcy = null;
         session.PeakPrice = null;
         session.TroughPrice = null;
         session.PositionSize = null;
@@ -740,24 +950,77 @@ public sealed class RealtimeService
 
     private static void AppendEvaluation(RealtimeSessionDocument session, CandlePointDto candle, string action, decimal? executionPrice, string reason, bool settleBeforeAppend = false)
     {
-        var evaluationPositionSide = session.PositionSide; var realizedEquity = session.RealizedEquity; var currentEquity = session.LastEquity; var unrealizedReturn = 0m; var grossReturn = 0m; var netReturn = 0m; var feeCost = 0m;
+        var evaluationPositionSide = session.PositionSide; var realizedEquity = session.RealizedEquity; var currentEquity = session.LastEquity; var unrealizedReturn = 0m; var grossReturn = 0m; var netReturn = 0m; var feeCost = 0m; decimal? grossPnl = null; decimal? fee = null; decimal? fundingFee = null; decimal? netPnl = null;
         var returnEntryPrice = ResolveReturnEntryPrice(session);
         if (settleBeforeAppend && returnEntryPrice.HasValue)
         {
-            var closePrice = executionPrice ?? candle.Close; grossReturn = CalculateGrossReturn(session.PositionSide, returnEntryPrice.Value, closePrice, session.Leverage); netReturn = grossReturn - RoundTripFeeRate; feeCost = RoundTripFeeRate; unrealizedReturn = netReturn; realizedEquity *= 1m + netReturn; currentEquity = realizedEquity; evaluationPositionSide = "flat";
+            var closePrice = executionPrice ?? candle.Close;
+            var pnl = CalculateSessionPnl(session, closePrice);
+            grossReturn = pnl.GrossReturn; netReturn = pnl.NetReturn; feeCost = pnl.FeeCostRate; unrealizedReturn = netReturn; realizedEquity *= 1m + netReturn; currentEquity = realizedEquity; evaluationPositionSide = "flat";
+            grossPnl = pnl.GrossPnl; fee = pnl.EntryFee + pnl.ExitFee; fundingFee = pnl.FundingFee; netPnl = pnl.NetPnl;
         }
         else if (!string.Equals(session.PositionSide, "flat", StringComparison.OrdinalIgnoreCase) && returnEntryPrice.HasValue)
         {
-            grossReturn = CalculateGrossReturn(session.PositionSide, returnEntryPrice.Value, candle.Close, session.Leverage); netReturn = grossReturn - RoundTripFeeRate; feeCost = RoundTripFeeRate; unrealizedReturn = netReturn; currentEquity = realizedEquity * (1m + unrealizedReturn);
+            var pnl = CalculateSessionPnl(session, candle.Close);
+            grossReturn = pnl.GrossReturn; netReturn = pnl.NetReturn; feeCost = pnl.FeeCostRate; unrealizedReturn = netReturn; currentEquity = realizedEquity * (1m + unrealizedReturn);
+            grossPnl = pnl.GrossPnl; fee = pnl.EntryFee + pnl.ExitFee; fundingFee = pnl.FundingFee; netPnl = pnl.NetPnl;
         }
         var periodReturn = session.LastEquity == 0m ? 0m : currentEquity / session.LastEquity - 1m; var totalReturn = currentEquity - 1m;
-        session.PeriodEvaluations.Add(new RealtimePeriodEvaluationDto(candle.Ts, candle.Close, action, evaluationPositionSide, executionPrice, reason, PositionStatusLabel(evaluationPositionSide), periodReturn, realizedEquity - 1m, unrealizedReturn, totalReturn, grossReturn, netReturn, feeCost, EntryFeeRate, ExitFeeRate, currentEquity));
+        session.PeriodEvaluations.Add(new RealtimePeriodEvaluationDto(candle.Ts, candle.Close, action, evaluationPositionSide, executionPrice, reason, PositionStatusLabel(evaluationPositionSide), periodReturn, realizedEquity - 1m, unrealizedReturn, totalReturn, grossReturn, netReturn, feeCost, session.LastTakerFeeRate, session.LastTakerFeeRate, currentEquity, grossPnl, fee, fundingFee, netPnl, session.FeeRateSource, session.ReconciliationStatus));
         session.LastEquity = currentEquity;
     }
 
     private static decimal? ResolveReturnEntryPrice(RealtimeSessionDocument session) => session.EntryPrice;
 
     private static long? ResolveReturnEntryTs(RealtimeSessionDocument session) => session.EntryTs;
+
+    private static TradePnlResult CalculateSessionPnl(RealtimeSessionDocument session, decimal exitPrice)
+    {
+        var entryPrice = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)
+            ? session.EntryAvgPx ?? session.ExecutionEntryPrice ?? session.EntryPrice
+            : session.EntryPrice;
+        var resolvedExitPrice = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)
+            ? session.ExitAvgPx ?? session.LastExecutionPrice ?? exitPrice
+            : exitPrice;
+        var size = session.ExitFillSize ?? session.LastExecutionSize ?? session.PositionSize;
+        if (!entryPrice.HasValue || !size.HasValue || !session.AllocatedCapital.HasValue)
+        {
+            var fallbackGross = session.EntryPrice.HasValue ? CalculateGrossReturn(session.PositionSide, session.EntryPrice.Value, exitPrice, session.Leverage) : 0m;
+            var fallbackFee = session.LastTakerFeeRate * 2m;
+            return new TradePnlResult(0m, 0m, 0m, 0m, 0m, fallbackGross, fallbackGross - fallbackFee, 0m, 0m, fallbackFee);
+        }
+
+        var contractValue = ResolveContractValueFromSession(session, entryPrice.Value, size.Value);
+        var actualGrossPnl = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase)
+            ? session.LastGrossPnl
+            : null;
+        var entryFee = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase) ? session.EntryFee : null;
+        var exitFee = string.Equals(session.Mode, "live", StringComparison.OrdinalIgnoreCase) ? session.ExitFee : null;
+        return PnlCalculator.CalculateLinearSwap(
+            session.PositionSide,
+            entryPrice.Value,
+            resolvedExitPrice,
+            size.Value,
+            contractValue,
+            session.AllocatedCapital.Value,
+            session.LastTakerFeeRate,
+            session.LastTakerFeeRate,
+            entryFee,
+            exitFee,
+            session.LastFundingFee ?? 0m,
+            actualGrossPnl);
+    }
+
+    private static decimal ResolveContractValueFromSession(RealtimeSessionDocument session, decimal entryPrice, decimal size)
+    {
+        if (session.EntryNotionalUsd.HasValue && entryPrice > 0m && size > 0m)
+        {
+            var inferred = session.EntryNotionalUsd.Value / (entryPrice * size);
+            if (inferred > 0m) return inferred;
+        }
+
+        return 1m;
+    }
 
     private static RealtimeSimulationDto BuildSimulation(List<CandlePointDto> candles, StrategyParameterSetDto parameters, string paramsSource, RealtimeSessionDocument? session)
     {
@@ -792,7 +1055,7 @@ public sealed class RealtimeService
     {
         var parameters = new StrategyParameterSetDto(session.StopLossPct, session.TrailingDrawdownPct, session.Leverage);
         var summary = BuildSessionSummary(parameters, session);
-        return new RealtimeLiveSessionDto(session.SessionId, session.Mode, session.InstId, session.Bar, session.StrategyType, parameters, session.AutoOptimizeParameters, session.LastOptimizationResult, session.LastOptimizationReason, session.ParamsSource, session.StartedAt, session.Status, session.PositionSide, session.EntryPrice, session.EntryTs, session.PositionSize, session.AllocatedCapital, session.EntryNotionalUsd, session.LastSettledCandleTs, session.LastSignal, session.SignalReason, session.LastOrderId, session.LastExecutionPrice, session.LastExecutionTs, session.LastExecutionSize, session.ErrorCode, session.ErrorMessage, summary, session.TradePoints, session.PeriodEvaluations, session.TradePoints.LastOrDefault(), session.PeriodEvaluations.LastOrDefault());
+        return new RealtimeLiveSessionDto(session.SessionId, session.Mode, session.InstId, session.Bar, session.StrategyType, parameters, session.AutoOptimizeParameters, session.LastOptimizationResult, session.LastOptimizationReason, session.ParamsSource, session.StartedAt, session.Status, session.PositionSide, session.EntryPrice, session.EntryTs, session.PositionSize, session.AllocatedCapital, session.EntryNotionalUsd, session.LastSettledCandleTs, session.LastSignal, session.SignalReason, session.LastOrderId, session.LastExecutionPrice, session.LastExecutionTs, session.LastExecutionSize, session.LastTakerFeeRate, session.FeeRateSource, session.ReconciliationStatus, session.ErrorCode, session.ErrorMessage, summary, session.TradePoints, session.PeriodEvaluations, session.TradePoints.LastOrDefault(), session.PeriodEvaluations.LastOrDefault());
     }
 
     private static BacktestResultDto? BuildSessionSummary(StrategyParameterSetDto parameters, RealtimeSessionDocument session)
@@ -985,6 +1248,63 @@ public sealed class RealtimeService
 
     private static decimal ParseDecimal(string? value) =>
         decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m;
+
+    private static OkxFillDocument ToFillDocument(OkxFillData x)
+    {
+        var orderId = x.OrdId ?? string.Empty;
+        var tradeId = x.TradeId ?? $"{orderId}-{x.Ts}";
+        return new OkxFillDocument
+        {
+            Id = $"{orderId}-{tradeId}",
+            TradeId = tradeId,
+            OrderId = orderId,
+            InstId = x.InstId ?? string.Empty,
+            Side = x.Side ?? string.Empty,
+            PosSide = x.PosSide ?? string.Empty,
+            ExecType = x.ExecType ?? string.Empty,
+            FillPrice = ParseDecimal(x.FillPx),
+            FillSize = ParseDecimal(x.FillSz),
+            FillPnl = ParseDecimal(x.FillPnl),
+            Fee = ParseDecimal(x.Fee),
+            FeeCcy = x.FeeCcy ?? string.Empty,
+            FillTime = ParseDateTime(x.Ts)
+        };
+    }
+
+    private static OkxPositionHistoryDocument ToPositionHistoryDocument(OkxPositionHistoryData x)
+    {
+        var id = string.IsNullOrWhiteSpace(x.PosId)
+            ? $"{x.InstId}-{x.PosSide}-{x.UTime ?? x.CTime}"
+            : $"{x.PosId}-{x.UTime ?? x.CTime}";
+        return new OkxPositionHistoryDocument
+        {
+            Id = id,
+            InstId = x.InstId ?? string.Empty,
+            PosSide = x.PosSide ?? string.Empty,
+            Direction = x.Direction ?? string.Empty,
+            OpenAvgPx = ParseDecimal(x.OpenAvgPx),
+            CloseAvgPx = ParseDecimal(x.CloseAvgPx),
+            OpenMaxPos = ParseDecimal(x.OpenMaxPos),
+            CloseTotalPos = ParseDecimal(x.CloseTotalPos),
+            RealizedPnl = ParseDecimal(x.RealizedPnl),
+            Pnl = ParseDecimal(x.Pnl),
+            Fee = ParseDecimal(x.Fee),
+            FundingFee = ParseDecimal(x.FundingFee),
+            PnlRatio = ParseDecimal(x.PnlRatio),
+            CreatedAt = ParseDateTime(x.CTime),
+            UpdatedAt = ParseDateTime(x.UTime)
+        };
+    }
+
+    private static DateTime ParseDateTime(string? millis)
+    {
+        if (long.TryParse(millis, NumberStyles.Any, CultureInfo.InvariantCulture, out var ms))
+        {
+            return DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime;
+        }
+
+        return DateTime.UtcNow;
+    }
 }
 
 internal sealed record LiveOrderPlan(decimal Size, decimal AllocatedCapital, decimal EntryNotionalUsd);

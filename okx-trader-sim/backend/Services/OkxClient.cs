@@ -32,7 +32,29 @@ public sealed class OkxClient
         await SendPrivateAsync<OkxPositionsResponse>(HttpMethod.Get, "/api/v5/account/positions", mode);
 
     public async Task<OkxOrdersHistoryResponse> GetOrdersHistoryAsync(string mode) =>
-        await SendPrivateAsync<OkxOrdersHistoryResponse>(HttpMethod.Get, "/api/v5/trade/orders-history-archive?instType=SWAP&limit=10", mode);
+        await SendPrivateAsync<OkxOrdersHistoryResponse>(HttpMethod.Get, "/api/v5/trade/orders-history-archive?instType=SWAP&limit=100", mode);
+
+    public async Task<OkxTradeFeeResponse> GetTradeFeeAsync(string mode, string instId) =>
+        await SendPrivateAsync<OkxTradeFeeResponse>(HttpMethod.Get, $"/api/v5/account/trade-fee?instType=SWAP&instId={Uri.EscapeDataString(instId)}", mode);
+
+    public async Task<OkxFillsHistoryResponse> GetFillsHistoryAsync(string mode, string? instId = null, string? orderId = null, DateTime? begin = null, DateTime? end = null)
+    {
+        var path = "/api/v5/trade/fills-history?instType=SWAP&limit=100";
+        if (!string.IsNullOrWhiteSpace(instId)) path += $"&instId={Uri.EscapeDataString(instId)}";
+        if (!string.IsNullOrWhiteSpace(orderId)) path += $"&ordId={Uri.EscapeDataString(orderId)}";
+        if (begin.HasValue) path += $"&begin={new DateTimeOffset(begin.Value).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
+        if (end.HasValue) path += $"&end={new DateTimeOffset(end.Value).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
+        return await SendPrivateAsync<OkxFillsHistoryResponse>(HttpMethod.Get, path, mode);
+    }
+
+    public async Task<OkxPositionsHistoryResponse> GetPositionsHistoryAsync(string mode, string? instId = null, DateTime? begin = null, DateTime? end = null)
+    {
+        var path = "/api/v5/account/positions-history?instType=SWAP&limit=100";
+        if (!string.IsNullOrWhiteSpace(instId)) path += $"&instId={Uri.EscapeDataString(instId)}";
+        if (begin.HasValue) path += $"&before={new DateTimeOffset(begin.Value).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
+        if (end.HasValue) path += $"&after={new DateTimeOffset(end.Value).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
+        return await SendPrivateAsync<OkxPositionsHistoryResponse>(HttpMethod.Get, path, mode);
+    }
 
     public async Task<OkxAccountConfigResponse> GetAccountConfigAsync(string mode) =>
         await SendPrivateAsync<OkxAccountConfigResponse>(HttpMethod.Get, "/api/v5/account/config", mode);
@@ -278,12 +300,85 @@ public sealed class OkxOrderData
     [JsonPropertyName("ordId")] public string? OrdId { get; set; }
     [JsonPropertyName("instId")] public string? InstId { get; set; }
     [JsonPropertyName("side")] public string? Side { get; set; }
+    [JsonPropertyName("posSide")] public string? PosSide { get; set; }
     [JsonPropertyName("ordType")] public string? OrdType { get; set; }
     [JsonPropertyName("state")] public string? State { get; set; }
     [JsonPropertyName("px")] public string? Px { get; set; }
+    [JsonPropertyName("avgPx")] public string? AvgPx { get; set; }
+    [JsonPropertyName("fee")] public string? Fee { get; set; }
+    [JsonPropertyName("feeCcy")] public string? FeeCcy { get; set; }
+    [JsonPropertyName("pnl")] public string? Pnl { get; set; }
     [JsonPropertyName("sz")] public string? Sz { get; set; }
     [JsonPropertyName("accFillSz")] public string? AccFillSz { get; set; }
     [JsonPropertyName("cTime")] public string? CTime { get; set; }
+    [JsonPropertyName("uTime")] public string? UTime { get; set; }
+}
+
+public sealed class OkxTradeFeeResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxTradeFeeData> Data { get; set; } = [];
+}
+
+public sealed class OkxTradeFeeData
+{
+    [JsonPropertyName("instType")] public string? InstType { get; set; }
+    [JsonPropertyName("instId")] public string? InstId { get; set; }
+    [JsonPropertyName("instFamily")] public string? InstFamily { get; set; }
+    [JsonPropertyName("maker")] public string? Maker { get; set; }
+    [JsonPropertyName("taker")] public string? Taker { get; set; }
+    [JsonPropertyName("makerU")] public string? MakerU { get; set; }
+    [JsonPropertyName("takerU")] public string? TakerU { get; set; }
+}
+
+public sealed class OkxFillsHistoryResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxFillData> Data { get; set; } = [];
+}
+
+public sealed class OkxFillData
+{
+    [JsonPropertyName("tradeId")] public string? TradeId { get; set; }
+    [JsonPropertyName("ordId")] public string? OrdId { get; set; }
+    [JsonPropertyName("instId")] public string? InstId { get; set; }
+    [JsonPropertyName("side")] public string? Side { get; set; }
+    [JsonPropertyName("posSide")] public string? PosSide { get; set; }
+    [JsonPropertyName("execType")] public string? ExecType { get; set; }
+    [JsonPropertyName("fillPx")] public string? FillPx { get; set; }
+    [JsonPropertyName("fillSz")] public string? FillSz { get; set; }
+    [JsonPropertyName("fillPnl")] public string? FillPnl { get; set; }
+    [JsonPropertyName("fee")] public string? Fee { get; set; }
+    [JsonPropertyName("feeCcy")] public string? FeeCcy { get; set; }
+    [JsonPropertyName("ts")] public string? Ts { get; set; }
+}
+
+public sealed class OkxPositionsHistoryResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxPositionHistoryData> Data { get; set; } = [];
+}
+
+public sealed class OkxPositionHistoryData
+{
+    [JsonPropertyName("posId")] public string? PosId { get; set; }
+    [JsonPropertyName("instId")] public string? InstId { get; set; }
+    [JsonPropertyName("posSide")] public string? PosSide { get; set; }
+    [JsonPropertyName("direction")] public string? Direction { get; set; }
+    [JsonPropertyName("openAvgPx")] public string? OpenAvgPx { get; set; }
+    [JsonPropertyName("closeAvgPx")] public string? CloseAvgPx { get; set; }
+    [JsonPropertyName("openMaxPos")] public string? OpenMaxPos { get; set; }
+    [JsonPropertyName("closeTotalPos")] public string? CloseTotalPos { get; set; }
+    [JsonPropertyName("realizedPnl")] public string? RealizedPnl { get; set; }
+    [JsonPropertyName("pnl")] public string? Pnl { get; set; }
+    [JsonPropertyName("fee")] public string? Fee { get; set; }
+    [JsonPropertyName("fundingFee")] public string? FundingFee { get; set; }
+    [JsonPropertyName("pnlRatio")] public string? PnlRatio { get; set; }
+    [JsonPropertyName("cTime")] public string? CTime { get; set; }
+    [JsonPropertyName("uTime")] public string? UTime { get; set; }
 }
 
 public sealed class OkxCandlesResponse

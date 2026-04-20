@@ -118,25 +118,77 @@ public sealed class OkxSyncService
         state.StrategyStatus = positions.Count == 0 ? "idle" : "running";
         await _repository.SaveAppStateAsync(state);
 
+        var since = DateTime.UtcNow.AddDays(-1);
         var orders = ordersRes.Data.Select((x, index) => new OrderHistoryDocument
         {
             Id = x.OrdId ?? $"ord-{index}",
             Symbol = x.InstId ?? "UNKNOWN",
             Side = x.Side ?? "unknown",
+            PosSide = x.PosSide,
             OrderType = x.OrdType ?? "unknown",
             State = x.State ?? "unknown",
-            Price = ToDecimal(x.Px),
+            Price = ResolveOrderPrice(x),
+            AvgPrice = ToDecimalOrNull(x.AvgPx),
+            Fee = ToDecimalOrNull(x.Fee),
+            FeeCcy = x.FeeCcy,
+            Pnl = ToDecimalOrNull(x.Pnl),
             Size = ToDecimal(x.Sz),
             FilledSize = ToDecimal(x.AccFillSz),
-            CreatedAt = ToDateTime(x.CTime)
+            CreatedAt = ToDateTime(x.CTime),
+            UpdatedAt = ToDateTime(x.UTime)
         }).ToList();
-        await _repository.ReplaceOrderHistoryAsync(orders);
+        await _repository.UpsertOrderHistoryAsync(orders, since);
+
+        var primaryInstId = orders.FirstOrDefault(x => !string.Equals(x.Symbol, "UNKNOWN", StringComparison.OrdinalIgnoreCase))?.Symbol
+            ?? positions.FirstOrDefault()?.Symbol
+            ?? "RAVE-USDT-SWAP";
+        string? fillsPayload = null;
+        string? positionsHistoryPayload = null;
+        string? tradeFeePayload = null;
+        try
+        {
+            var begin = DateTime.UtcNow.AddDays(-1);
+            var fillsRes = await _client.GetFillsHistoryAsync(mode, primaryInstId, null, begin, DateTime.UtcNow);
+            fillsPayload = JsonSerializer.Serialize(fillsRes);
+            if (fillsRes.Code == "0")
+            {
+                await _repository.UpsertOkxFillsAsync(fillsRes.Data.Select(ToFillDocument), begin);
+            }
+        }
+        catch { fillsPayload = null; }
+
+        try
+        {
+            var begin = DateTime.UtcNow.AddDays(-1);
+            var positionsHistoryRes = await _client.GetPositionsHistoryAsync(mode, primaryInstId, begin, DateTime.UtcNow);
+            positionsHistoryPayload = JsonSerializer.Serialize(positionsHistoryRes);
+            if (positionsHistoryRes.Code == "0")
+            {
+                await _repository.UpsertOkxPositionHistoryAsync(positionsHistoryRes.Data.Select(ToPositionHistoryDocument), begin);
+            }
+        }
+        catch { positionsHistoryPayload = null; }
+
+        try
+        {
+            var tradeFeeRes = await _client.GetTradeFeeAsync(mode, primaryInstId);
+            tradeFeePayload = JsonSerializer.Serialize(tradeFeeRes);
+            if (tradeFeeRes.Code == "0")
+            {
+                var fee = BuildTradeFee(primaryInstId, tradeFeeRes);
+                await _repository.SaveOkxTradeFeeAsync(fee);
+            }
+        }
+        catch { tradeFeePayload = null; }
 
         await _repository.SaveRawOkxPayloadsAsync(new RawOkxPayloadDocument
         {
             AccountBalance = JsonSerializer.Serialize(balanceRes),
             AccountPositions = JsonSerializer.Serialize(positionsRes),
-            OrdersHistory = JsonSerializer.Serialize(ordersRes)
+            OrdersHistory = JsonSerializer.Serialize(ordersRes),
+            FillsHistory = fillsPayload,
+            PositionsHistory = positionsHistoryPayload,
+            TradeFee = tradeFeePayload
         });
 
         return await _stateService.GetStateAsync();
@@ -146,6 +198,80 @@ public sealed class OkxSyncService
 
     private static decimal ToDecimal(string? value, decimal fallback = 0m) =>
         decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var n) ? n : fallback;
+
+    private static decimal? ToDecimalOrNull(string? value) =>
+        decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    private static decimal ResolveOrderPrice(OkxOrderData order)
+    {
+        var avg = ToDecimal(order.AvgPx);
+        if (avg > 0m) return avg;
+        return ToDecimal(order.Px);
+    }
+
+    private static OkxFillDocument ToFillDocument(OkxFillData x)
+    {
+        var tradeId = x.TradeId ?? $"{x.OrdId}-{x.Ts}";
+        var orderId = x.OrdId ?? string.Empty;
+        return new OkxFillDocument
+        {
+            Id = $"{orderId}-{tradeId}",
+            TradeId = tradeId,
+            OrderId = orderId,
+            InstId = x.InstId ?? "UNKNOWN",
+            Side = x.Side ?? "unknown",
+            PosSide = x.PosSide ?? "unknown",
+            ExecType = x.ExecType ?? "unknown",
+            FillPrice = ToDecimal(x.FillPx),
+            FillSize = ToDecimal(x.FillSz),
+            FillPnl = ToDecimal(x.FillPnl),
+            Fee = ToDecimal(x.Fee),
+            FeeCcy = x.FeeCcy ?? string.Empty,
+            FillTime = ToDateTime(x.Ts)
+        };
+    }
+
+    private static OkxPositionHistoryDocument ToPositionHistoryDocument(OkxPositionHistoryData x)
+    {
+        var id = string.IsNullOrWhiteSpace(x.PosId)
+            ? $"{x.InstId}-{x.PosSide}-{x.UTime ?? x.CTime}"
+            : $"{x.PosId}-{x.UTime ?? x.CTime}";
+        return new OkxPositionHistoryDocument
+        {
+            Id = id,
+            InstId = x.InstId ?? "UNKNOWN",
+            PosSide = x.PosSide ?? "unknown",
+            Direction = x.Direction ?? string.Empty,
+            OpenAvgPx = ToDecimal(x.OpenAvgPx),
+            CloseAvgPx = ToDecimal(x.CloseAvgPx),
+            OpenMaxPos = ToDecimal(x.OpenMaxPos),
+            CloseTotalPos = ToDecimal(x.CloseTotalPos),
+            RealizedPnl = ToDecimal(x.RealizedPnl),
+            Pnl = ToDecimal(x.Pnl),
+            Fee = ToDecimal(x.Fee),
+            FundingFee = ToDecimal(x.FundingFee),
+            PnlRatio = ToDecimal(x.PnlRatio),
+            CreatedAt = ToDateTime(x.CTime),
+            UpdatedAt = ToDateTime(x.UTime)
+        };
+    }
+
+    private static OkxTradeFeeDocument BuildTradeFee(string instId, OkxTradeFeeResponse response)
+    {
+        var data = response.Data.FirstOrDefault();
+        var taker = Math.Abs(ToDecimal(data?.TakerU, ToDecimal(data?.Taker, StrategyRegistryService.DefaultTakerFeeRate)));
+        var maker = Math.Abs(ToDecimal(data?.MakerU, ToDecimal(data?.Maker, StrategyRegistryService.DefaultTakerFeeRate)));
+        return new OkxTradeFeeDocument
+        {
+            Id = $"SWAP:{instId}",
+            InstType = data?.InstType ?? "SWAP",
+            InstId = data?.InstId ?? instId,
+            InstFamily = data?.InstFamily,
+            MakerFeeRate = maker,
+            TakerFeeRate = taker <= 0m ? StrategyRegistryService.DefaultTakerFeeRate : taker,
+            Source = data is null ? "fallback" : "okx"
+        };
+    }
 
     private static DateTime ToDateTime(string? millis)
     {

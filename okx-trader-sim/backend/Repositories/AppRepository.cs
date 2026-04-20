@@ -110,6 +110,51 @@ public sealed class AppRepository
         if (list.Count > 0) await _db.OrderHistory.InsertManyAsync(list);
     }
 
+    public async Task UpsertOrderHistoryAsync(IEnumerable<OrderHistoryDocument> orders, DateTime since)
+    {
+        foreach (var order in orders)
+        {
+            order.UpdatedAt = DateTime.UtcNow;
+            await _db.OrderHistory.ReplaceOneAsync(x => x.Id == order.Id, order, new ReplaceOptions { IsUpsert = true });
+        }
+
+        await _db.OrderHistory.DeleteManyAsync(x => x.CreatedAt < since);
+    }
+
+    public async Task UpsertOkxFillsAsync(IEnumerable<OkxFillDocument> fills, DateTime since)
+    {
+        foreach (var fill in fills)
+        {
+            fill.SyncedAt = DateTime.UtcNow;
+            await _db.OkxFills.ReplaceOneAsync(x => x.Id == fill.Id, fill, new ReplaceOptions { IsUpsert = true });
+        }
+
+        await _db.OkxFills.DeleteManyAsync(x => x.FillTime < since);
+    }
+
+    public async Task UpsertOkxPositionHistoryAsync(IEnumerable<OkxPositionHistoryDocument> positions, DateTime since)
+    {
+        foreach (var position in positions)
+        {
+            position.SyncedAt = DateTime.UtcNow;
+            await _db.OkxPositionHistory.ReplaceOneAsync(x => x.Id == position.Id, position, new ReplaceOptions { IsUpsert = true });
+        }
+
+        await _db.OkxPositionHistory.DeleteManyAsync(x => x.UpdatedAt < since);
+    }
+
+    public Task<List<OkxFillDocument>> GetOkxFillsByOrderIdAsync(string orderId) =>
+        _db.OkxFills.Find(x => x.OrderId == orderId).SortBy(x => x.FillTime).ToListAsync();
+
+    public async Task SaveOkxTradeFeeAsync(OkxTradeFeeDocument fee)
+    {
+        fee.UpdatedAt = DateTime.UtcNow;
+        await _db.OkxTradeFees.ReplaceOneAsync(x => x.Id == fee.Id, fee, new ReplaceOptions { IsUpsert = true });
+    }
+
+    public async Task<OkxTradeFeeDocument?> GetOkxTradeFeeAsync(string id) =>
+        await _db.OkxTradeFees.Find(x => x.Id == id).FirstOrDefaultAsync();
+
     public Task SaveRawOkxPayloadsAsync(RawOkxPayloadDocument raw)
     {
         raw.Id = DocumentIds.Default;

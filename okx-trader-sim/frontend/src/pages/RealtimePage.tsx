@@ -644,6 +644,8 @@ export function RealtimePage({ app }: { app: AppContext }) {
         </div>
 
         <div className="resultSummaryStrip">
+          <div><span>OKX taker费率</span><strong>{formatPercent(liveSession?.lastTakerFeeRate ?? 0.0005)}</strong></div>
+          <div><span>成交核对</span><strong>{liveSession?.reconciliationStatus ?? '-'}</strong></div>
           <div><span>本次使用资金</span><strong>{formatNumber(liveSession?.allocatedCapital, 4)}</strong></div>
           <div><span>开仓张数</span><strong>{formatNumber(liveSession?.positionSize, 8)}</strong></div>
           <div><span>名义价值</span><strong>{formatNumber(liveSession?.entryNotionalUsd, 4)}</strong></div>
@@ -732,7 +734,8 @@ export function RealtimePage({ app }: { app: AppContext }) {
                   <th>开仓价</th>
                   <th>平仓时间</th>
                   <th>平仓价</th>
-                  <th>净收益</th>
+                  <th>净收益率</th>
+                  <th>净PNL</th>
                   <th>费率</th>
                   <th>原因</th>
                 </tr>
@@ -745,7 +748,8 @@ export function RealtimePage({ app }: { app: AppContext }) {
                     <td>{formatNumber(trade.entryPrice, 8)}</td>
                     <td>{displayTime(trade.exitTs)}</td>
                     <td>{formatNumber(trade.exitPrice, 8)}</td>
-                    <td className={(trade.netRet ?? trade.ret) >= 0 ? 'good' : 'bad'}>{formatPercent(trade.netRet ?? trade.ret)}</td>
+                    <td className={(trade.netReturn ?? trade.netRet ?? trade.ret) >= 0 ? 'good' : 'bad'}>{formatPercent(trade.netReturn ?? trade.netRet ?? trade.ret)}</td>
+                    <td className={(trade.netPnl ?? 0) >= 0 ? 'good' : 'bad'}>{formatNumber(trade.netPnl, 6)}</td>
                     <td>{formatPercent(trade.feeCost ?? 0)}</td>
                     <td>{trade.reason}</td>
                   </tr>
@@ -770,9 +774,12 @@ export function RealtimePage({ app }: { app: AppContext }) {
                   <th>平仓时间</th>
                   <th>成交价</th>
                   <th>张数</th>
-                  <th>净收益</th>
+                  <th>净收益率</th>
+                  <th>净PNL</th>
+                  <th>手续费</th>
                   <th>费率</th>
-                  <th>委托号</th>
+                  <th>订单号</th>
+                  <th>核对</th>
                   <th>原因</th>
                 </tr>
               </thead>
@@ -783,11 +790,14 @@ export function RealtimePage({ app }: { app: AppContext }) {
                     <td>{displayTime(trade.entryTs)}</td>
                     <td>{formatNumber(trade.entryPrice, 8)}</td>
                     <td>{displayTime(trade.exitTs)}</td>
-                    <td>{formatNumber(trade.executedPrice ?? trade.exitPrice, 8)}</td>
+                    <td>{formatNumber(trade.exitAvgPx ?? trade.executedPrice ?? trade.exitPrice, 8)}</td>
                     <td>{formatNumber(trade.executedSize, 8)}</td>
-                    <td className={(trade.netRet ?? trade.ret) >= 0 ? 'good' : 'bad'}>{formatPercent(trade.netRet ?? trade.ret)}</td>
+                    <td className={(trade.netReturn ?? trade.netRet ?? trade.ret) >= 0 ? 'good' : 'bad'}>{formatPercent(trade.netReturn ?? trade.netRet ?? trade.ret)}</td>
+                    <td className={(trade.netPnl ?? 0) >= 0 ? 'good' : 'bad'}>{formatNumber(trade.netPnl, 6)}</td>
+                    <td>{formatNumber(trade.fee, 6)}</td>
                     <td>{formatPercent(trade.feeCost ?? 0)}</td>
-                    <td>{trade.orderId ?? '-'}</td>
+                    <td>{trade.exitOrderId ?? trade.orderId ?? '-'}</td>
+                    <td>{trade.reconciliationStatus ?? '-'}</td>
                     <td>{trade.reason}</td>
                   </tr>
                 ))}

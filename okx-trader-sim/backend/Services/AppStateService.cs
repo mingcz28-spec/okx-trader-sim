@@ -65,7 +65,7 @@ public sealed class AppStateService
         new(doc.Ccy, doc.Equity, doc.CashBalance, doc.AvailableBalance);
 
     public static OrderHistoryDto ToOrderDto(OrderHistoryDocument doc) =>
-        new(doc.Id, doc.Symbol, doc.Side, doc.OrderType, doc.State, doc.Price, doc.Size, doc.FilledSize, doc.CreatedAt);
+        new(doc.Id, doc.Symbol, doc.Side, doc.OrderType, doc.State, doc.Price, doc.Size, doc.FilledSize, doc.CreatedAt, doc.PosSide, doc.AvgPrice, doc.Fee, doc.FeeCcy, doc.Pnl);
 
     public static BacktestSummaryDto ToBacktestDto(BacktestDocument doc) =>
         new(doc.Id, doc.InstId, doc.Bar, doc.StrategyType, doc.CandlesCount, doc.Results, doc.Top, doc.Selected, doc.ChartCandles, doc.TradePoints);

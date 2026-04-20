@@ -84,12 +84,68 @@ public sealed class OrderHistoryDocument
     [BsonId] public string Id { get; set; } = string.Empty;
     public string Symbol { get; set; } = string.Empty;
     public string Side { get; set; } = string.Empty;
+    public string? PosSide { get; set; }
     public string OrderType { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public decimal Price { get; set; }
+    public decimal? AvgPrice { get; set; }
+    public decimal? Fee { get; set; }
+    public string? FeeCcy { get; set; }
+    public decimal? Pnl { get; set; }
     public decimal Size { get; set; }
     public decimal FilledSize { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class OkxFillDocument
+{
+    [BsonId] public string Id { get; set; } = string.Empty;
+    public string TradeId { get; set; } = string.Empty;
+    public string OrderId { get; set; } = string.Empty;
+    public string InstId { get; set; } = string.Empty;
+    public string Side { get; set; } = string.Empty;
+    public string PosSide { get; set; } = string.Empty;
+    public string ExecType { get; set; } = string.Empty;
+    public decimal FillPrice { get; set; }
+    public decimal FillSize { get; set; }
+    public decimal FillPnl { get; set; }
+    public decimal Fee { get; set; }
+    public string FeeCcy { get; set; } = string.Empty;
+    public DateTime FillTime { get; set; } = DateTime.UtcNow;
+    public DateTime SyncedAt { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class OkxPositionHistoryDocument
+{
+    [BsonId] public string Id { get; set; } = string.Empty;
+    public string InstId { get; set; } = string.Empty;
+    public string PosSide { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public decimal OpenAvgPx { get; set; }
+    public decimal CloseAvgPx { get; set; }
+    public decimal OpenMaxPos { get; set; }
+    public decimal CloseTotalPos { get; set; }
+    public decimal RealizedPnl { get; set; }
+    public decimal Pnl { get; set; }
+    public decimal Fee { get; set; }
+    public decimal FundingFee { get; set; }
+    public decimal PnlRatio { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime SyncedAt { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class OkxTradeFeeDocument
+{
+    [BsonId] public string Id { get; set; } = DocumentIds.Default;
+    public string InstType { get; set; } = "SWAP";
+    public string? InstId { get; set; }
+    public string? InstFamily { get; set; }
+    public decimal MakerFeeRate { get; set; }
+    public decimal TakerFeeRate { get; set; }
+    public string Source { get; set; } = "fallback";
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class RawOkxPayloadDocument
@@ -98,6 +154,9 @@ public sealed class RawOkxPayloadDocument
     public string? AccountBalance { get; set; }
     public string? AccountPositions { get; set; }
     public string? OrdersHistory { get; set; }
+    public string? FillsHistory { get; set; }
+    public string? PositionsHistory { get; set; }
+    public string? TradeFee { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -142,6 +201,11 @@ public sealed class RealtimeSessionDocument
     public long? EntryTs { get; set; }
     public decimal? ExecutionEntryPrice { get; set; }
     public long? ExecutionEntryTs { get; set; }
+    public string? EntryOrderId { get; set; }
+    public decimal? EntryAvgPx { get; set; }
+    public decimal? EntryFillSize { get; set; }
+    public decimal? EntryFee { get; set; }
+    public string? EntryFeeCcy { get; set; }
     public decimal? PeakPrice { get; set; }
     public decimal? TroughPrice { get; set; }
     public decimal? PositionSize { get; set; }
@@ -156,6 +220,19 @@ public sealed class RealtimeSessionDocument
     public decimal? LastExecutionPrice { get; set; }
     public long? LastExecutionTs { get; set; }
     public decimal? LastExecutionSize { get; set; }
+    public string? ExitOrderId { get; set; }
+    public decimal? ExitAvgPx { get; set; }
+    public decimal? ExitFillSize { get; set; }
+    public decimal? ExitFee { get; set; }
+    public string? ExitFeeCcy { get; set; }
+    public decimal? LastGrossPnl { get; set; }
+    public decimal? LastFee { get; set; }
+    public decimal? LastFundingFee { get; set; }
+    public decimal? LastNetPnl { get; set; }
+    public decimal? LastNetReturn { get; set; }
+    public decimal LastTakerFeeRate { get; set; } = 0.0005m;
+    public string FeeRateSource { get; set; } = "fallback";
+    public string ReconciliationStatus { get; set; } = "model";
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
     public List<RealtimePeriodEvaluationDto> PeriodEvaluations { get; set; } = [];
@@ -167,7 +244,7 @@ public sealed record ApiConnectionSummaryDto(string ApiKeyMasked, bool HasApiKey
 public sealed record RiskConfigDto(decimal MaxPositionPct, decimal MaxDailyLossPct, int MaxConsecutiveLosses);
 public sealed record StrategyConfigDto(string StrategyType, bool Enabled, string EntrySide, decimal StopLossPct, decimal TrailingDrawdownPct, decimal Leverage, decimal? HighestPriceSinceEntry, decimal? EntryPrice, string LastSignal);
 public sealed record BalanceDetailDto(string Ccy, decimal Equity, decimal CashBalance, decimal AvailableBalance);
-public sealed record OrderHistoryDto(string Id, string Symbol, string Side, string OrderType, string State, decimal Price, decimal Size, decimal FilledSize, DateTime CreatedAt);
+public sealed record OrderHistoryDto(string Id, string Symbol, string Side, string OrderType, string State, decimal Price, decimal Size, decimal FilledSize, DateTime CreatedAt, string? PosSide = null, decimal? AvgPrice = null, decimal? Fee = null, string? FeeCcy = null, decimal? Pnl = null);
 public sealed record PositionDto(string Id, string Symbol, string Side, decimal Leverage, string? MarginMode, decimal? Quantity, decimal Notional, decimal? MarginUsed, decimal? UnrealizedPnl, decimal EntryPrice, decimal MarkPrice, decimal PnlPct, DateTime OpenedAt);
 public sealed record CandlePointDto(long Ts, decimal Open, decimal High, decimal Low, decimal Close);
 public sealed record OrderBookLevelDto(decimal Price, decimal Size, decimal Total, int Orders);
@@ -192,7 +269,18 @@ public sealed record BacktestTradePointDto(
     string? ExecutedSide = null,
     decimal? ExecutedPrice = null,
     decimal? ExecutedSize = null,
-    string? ExchangeState = null);
+    string? ExchangeState = null,
+    string? EntryOrderId = null,
+    string? ExitOrderId = null,
+    decimal? EntryAvgPx = null,
+    decimal? ExitAvgPx = null,
+    decimal? GrossPnl = null,
+    decimal? Fee = null,
+    decimal? FundingFee = null,
+    decimal? NetPnl = null,
+    decimal? NetReturn = null,
+    string FeeRateSource = "fallback",
+    string ReconciliationStatus = "model");
 public sealed record BacktestResultDto(
     decimal StopLossPct,
     decimal TrailingDrawdownPct,
@@ -262,6 +350,9 @@ public sealed record RealtimeLiveSessionDto(
     decimal? LastExecutionPrice,
     long? LastExecutionTs,
     decimal? LastExecutionSize,
+    decimal LastTakerFeeRate,
+    string FeeRateSource,
+    string ReconciliationStatus,
     string? ErrorCode,
     string? ErrorMessage,
     BacktestResultDto? Summary,
@@ -286,7 +377,13 @@ public sealed record RealtimePeriodEvaluationDto(
     decimal FeeCost,
     decimal EntryFeeRate,
     decimal ExitFeeRate,
-    decimal Equity);
+    decimal Equity,
+    decimal? GrossPnl = null,
+    decimal? Fee = null,
+    decimal? FundingFee = null,
+    decimal? NetPnl = null,
+    string FeeRateSource = "fallback",
+    string ReconciliationStatus = "model");
 public sealed record RealtimeSimulationDto(
     BacktestResultDto? Summary,
     List<CandlePointDto> Candles,
