@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
+import { BacktestAnalysisPanel } from '../components/backtest/BacktestAnalysisPanel';
+import { BacktestParameterPanel } from '../components/backtest/BacktestParameterPanel';
 import { CandleChart } from '../components/backtest/CandleChart';
 import { EquityCurve } from '../components/backtest/EquityCurve';
+import { StrategyPicker } from '../components/backtest/StrategyPicker';
 import { EmptyState } from '../components/common/EmptyState';
 import type { AppState, BacktestBar, BacktestResult, StrategyDefinition, StrategyType } from '../types';
 import { formatNumber, formatPercent } from '../utils/format';
@@ -13,12 +16,30 @@ type AppContext = {
   setError: (message: string) => void;
 };
 
-const fallbackStrategies: StrategyDefinition[] = [
-  { id: 'buy-sell', name: '买入卖出策略', description: '无仓即入场，按止损和移动回撤退出。', status: 'active', supportsBacktest: true, supportsRealtime: true },
-  { id: 'trend', name: '趋势跟随策略', description: '价格站上 20 根均线并接近区间高点时入场。', status: 'active', supportsBacktest: true, supportsRealtime: true },
-  { id: 'mean-reversion', name: '均值回归策略', description: '待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false },
-  { id: 'breakout', name: '突破策略', description: '待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false },
+const fallbackParams = { stopLossPct: 1, trailingDrawdownPct: 2, leverage: 3 };
+const fallbackParameterDefinitions = [
+  { id: 'stopLossPct', label: '止损比例', description: '价格偏离入场价达到该比例时退出。', value: 1, unit: '%' },
+  { id: 'trailingDrawdownPct', label: '浮盈回撤比例', description: '从开仓后最大浮盈回吐达到该比例时退出。', value: 2, unit: '%' },
+  { id: 'leverage', label: '杠杆', description: '收益按该杠杆放大，同时扣除双边 taker 费率。', value: 3, unit: 'x' },
 ];
+
+const fallbackStrategies: StrategyDefinition[] = [
+  { id: 'buy-sell', name: '买入卖出策略', description: '过去 20 个点的均值曲线向上开多，向下开空；平仓使用止损和浮盈回撤。', status: 'active', supportsBacktest: true, supportsRealtime: true, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
+  { id: 'trend', name: '趋势跟随策略', description: '价格站上 20 均线并接近前高时开多，跌回均线或触发止损后退出。', status: 'active', supportsBacktest: true, supportsRealtime: true, defaultParams: { stopLossPct: 1.2, trailingDrawdownPct: 2.5, leverage: 3 }, parameters: fallbackParameterDefinitions },
+  { id: 'mean-reversion', name: '均值回归策略', description: '价格偏离均值后等待回归确认，当前待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
+  { id: 'breakout', name: '突破策略', description: '价格突破关键区间后跟随入场，当前待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
+];
+
+function tradeReason(reason: string) {
+  if (reason === 'stop_loss') return '止损';
+  if (reason === 'trailing_exit') return '浮盈回撤';
+  if (reason === 'force_close') return '强制平仓';
+  return reason;
+}
+
+function getValidationMessage(stopLossPct: number, leverage: number) {
+  return stopLossPct * leverage > 10 ? '止损比例 * 杠杆不能超过 10%。' : '';
+}
 
 export function BacktestPage({ app }: { app: AppContext }) {
   const state = app.state!;
@@ -26,14 +47,24 @@ export function BacktestPage({ app }: { app: AppContext }) {
   const [strategy, setStrategy] = useState<StrategyType>(initialStrategy);
   const [strategies, setStrategies] = useState<StrategyDefinition[]>(fallbackStrategies);
   const [bar, setBar] = useState<BacktestBar>((state.backtest?.bar as BacktestBar) ?? '1H');
-  const [risk, setRisk] = useState(state.riskConfig);
-  const [strategyConfig, setStrategyConfig] = useState({ ...state.strategyConfig, strategyType: initialStrategy });
-  const instId = state.positions[0]?.symbol || state.backtest?.instId || 'RAVE-USDT-SWAP';
+  const [strategyConfig, setStrategyConfig] = useState({
+    ...state.strategyConfig,
+    strategyType: initialStrategy,
+    leverage: state.strategyConfig.leverage ?? 3,
+  });
   const [running, setRunning] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const instId = state.backtest?.instId || 'RAVE-USDT-SWAP';
   const backtest = state.backtest;
   const selectedStrategy = strategies.find((item) => item.id === strategy) ?? strategies[0];
   const canRunStrategy = selectedStrategy.status === 'active' && selectedStrategy.supportsBacktest;
-  const rows = useMemo(() => [...(backtest?.results?.length ? backtest.results : backtest?.top ?? [])].sort((a, b) => b.totalReturn - a.totalReturn), [backtest]);
+  const candidates = useMemo(
+    () => [...(backtest?.results?.length ? backtest.results : backtest?.top ?? [])].sort((a, b) => b.netTotalReturn - a.netTotalReturn),
+    [backtest],
+  );
+  const bestResult = candidates[0] ?? null;
+  const hasDetail = Boolean(backtest?.selected && backtest.chartCandles.length && backtest.tradePoints.length);
+  const validationMessage = getValidationMessage(Number(strategyConfig.stopLossPct), Number(strategyConfig.leverage));
 
   useEffect(() => {
     api.getStrategies()
@@ -41,40 +72,40 @@ export function BacktestPage({ app }: { app: AppContext }) {
       .catch((err) => app.setError(err instanceof Error ? err.message : '加载策略列表失败'));
   }, []);
 
-  function changeStrategy(next: StrategyType) {
+  async function selectStrategy(next: StrategyType) {
+    const nextDefinition = strategies.find((item) => item.id === next);
+    if (!nextDefinition || nextDefinition.status !== 'active' || !nextDefinition.supportsBacktest) return;
+
     setStrategy(next);
-    setStrategyConfig((current) => ({ ...current, strategyType: next }));
+    const nextConfig = { ...strategyConfig, strategyType: next, leverage: nextDefinition.defaultParams.leverage ?? strategyConfig.leverage };
+    setStrategyConfig(nextConfig);
+    app.setState({ ...state, strategyConfig: nextConfig, backtest: state.backtest?.strategyType === next ? state.backtest : null });
+    await runBacktest(next, nextConfig);
   }
 
-  async function saveRisk() {
-    app.setError('');
-    try {
-      await api.saveRiskConfig(risk);
-      app.setState({ ...state, riskConfig: risk });
-      app.setMessage('风控参数已保存。');
-    } catch (err) {
-      app.setError(err instanceof Error ? err.message : '保存风控失败');
-    }
-  }
-
-  async function saveStrategy() {
-    app.setError('');
-    try {
-      const next = await api.saveStrategyConfig({ ...strategyConfig, strategyType: strategy });
-      app.setState({ ...state, strategyConfig: next });
-      app.setMessage('策略参数已保存。');
-    } catch (err) {
-      app.setError(err instanceof Error ? err.message : '保存策略失败');
-    }
-  }
-
-  async function runBacktest() {
+  async function runBacktest(targetStrategy = strategy, config = strategyConfig) {
     setRunning(true);
+    setLoadingDetail(false);
     app.setError('');
     try {
-      const result = await api.runBacktest({ instId, bar, strategyType: strategy });
-      app.setState({ ...state, backtest: result, strategyConfig: { ...strategyConfig, strategyType: strategy } });
-      app.setMessage(`回测完成，共 ${result.results.length} 组参数。`);
+      const result = await api.runBacktest({ instId, bar, strategyType: targetStrategy });
+      const best = result.results[0] ?? result.top[0];
+      if (!best) {
+        app.setState({ ...state, backtest: result, strategyConfig: config });
+        app.setMessage('回测完成，但没有产生可用参数。');
+        return;
+      }
+
+      const bestConfig = {
+        ...config,
+        strategyType: targetStrategy,
+        stopLossPct: best.stopLossPct,
+        trailingDrawdownPct: best.trailingDrawdownPct,
+        leverage: best.leverage,
+      };
+      setStrategyConfig(bestConfig);
+      await loadBacktestDetail(best, targetStrategy, bestConfig, result);
+      app.setMessage(`已为 ${strategyName(targetStrategy)} 找到最优参数：止损 ${best.stopLossPct}% / 回撤 ${best.trailingDrawdownPct}% / 杠杆 ${best.leverage}x。`);
     } catch (err) {
       app.setError(err instanceof Error ? err.message : '回测失败');
     } finally {
@@ -82,88 +113,178 @@ export function BacktestPage({ app }: { app: AppContext }) {
     }
   }
 
-  async function selectResult(result: BacktestResult) {
+  async function loadBacktestDetail(result: BacktestResult, targetStrategy = strategy, config = strategyConfig, gridResult = backtest) {
+    setLoadingDetail(true);
     app.setError('');
     try {
-      const detail = await api.loadBacktestDetail({ instId, bar, strategyType: strategy, stopLossPct: result.stopLossPct, trailingDrawdownPct: result.trailingDrawdownPct });
-      const nextStrategyConfig = { ...strategyConfig, strategyType: strategy, stopLossPct: result.stopLossPct, trailingDrawdownPct: result.trailingDrawdownPct };
-      setStrategyConfig(nextStrategyConfig);
-      app.setState({ ...state, backtest: detail, strategyConfig: nextStrategyConfig });
-      app.setMessage(`已加载 ${selectedStrategy.name} ${result.stopLossPct}% / ${result.trailingDrawdownPct}% 回测详情。`);
+      const detail = await api.loadBacktestDetail({
+        instId,
+        bar,
+        strategyType: targetStrategy,
+        stopLossPct: result.stopLossPct,
+        trailingDrawdownPct: result.trailingDrawdownPct,
+        leverage: result.leverage,
+      });
+      const nextConfig = {
+        ...config,
+        strategyType: targetStrategy,
+        stopLossPct: result.stopLossPct,
+        trailingDrawdownPct: result.trailingDrawdownPct,
+        leverage: result.leverage,
+      };
+      setStrategyConfig(nextConfig);
+      app.setState({ ...state, backtest: { ...detail, results: detail.results.length ? detail.results : gridResult?.results ?? [], top: detail.top.length ? detail.top : gridResult?.top ?? [] }, strategyConfig: nextConfig });
     } catch (err) {
+      if (gridResult) app.setState({ ...state, backtest: gridResult, strategyConfig: config });
       app.setError(err instanceof Error ? err.message : '加载回测详情失败');
+    } finally {
+      setLoadingDetail(false);
     }
   }
 
+  async function runCurrentParameters() {
+    if (validationMessage) {
+      app.setError(validationMessage);
+      return;
+    }
+
+    const manualResult: BacktestResult = {
+      stopLossPct: Number(strategyConfig.stopLossPct),
+      trailingDrawdownPct: Number(strategyConfig.trailingDrawdownPct),
+      leverage: Number(strategyConfig.leverage),
+      trades: 0,
+      winRate: 0,
+      totalReturn: 0,
+      maxDrawdown: 0,
+      grossTotalReturn: 0,
+      netTotalReturn: 0,
+      feeCost: 0,
+    };
+    await loadBacktestDetail(manualResult, strategy, strategyConfig);
+    app.setMessage(`已按当前参数加载回测：止损 ${manualResult.stopLossPct}% / 回撤 ${manualResult.trailingDrawdownPct}% / 杠杆 ${manualResult.leverage}x。`);
+  }
+
+  async function saveStrategy() {
+    if (validationMessage) {
+      app.setError(validationMessage);
+      return;
+    }
+
+    app.setError('');
+    try {
+      const next = await api.saveStrategyConfig({ ...strategyConfig, strategyType: strategy });
+      app.setState({ ...state, strategyConfig: next });
+      app.setMessage('策略参数已保存；已运行的实时模拟或实盘会话不会自动切换参数。');
+    } catch (err) {
+      app.setError(err instanceof Error ? err.message : '保存策略失败');
+    }
+  }
+
+  function strategyName(id: StrategyType) {
+    return strategies.find((item) => item.id === id)?.name ?? id;
+  }
+
   return (
-    <div className="pageGrid">
-      <section className="panel">
-        <p className="eyebrow">策略参数</p>
-        <h2>回测控制</h2>
-        <p className="bodyCopy">{selectedStrategy.description}</p>
-        <div className="formGrid single">
-          <label>
-            策略
-            <select value={strategy} onChange={(e) => changeStrategy(e.target.value as StrategyType)}>
-              {strategies.map((item) => (
-                <option key={item.id} value={item.id} disabled={item.status !== 'active' || !item.supportsBacktest}>
-                  {item.name}{item.status === 'pending' ? '（待接入）' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>标的<input value={instId} readOnly /></label>
-          <label>周期<select value={bar} onChange={(e) => setBar(e.target.value as BacktestBar)}><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1H">1H</option><option value="4H">4H</option><option value="1D">1D</option></select></label>
-          <label>止损 %<input type="number" value={strategyConfig.stopLossPct} onChange={(e) => setStrategyConfig({ ...strategyConfig, stopLossPct: Number(e.target.value) })} /></label>
-          <label>移动回撤 %<input type="number" value={strategyConfig.trailingDrawdownPct} onChange={(e) => setStrategyConfig({ ...strategyConfig, trailingDrawdownPct: Number(e.target.value) })} /></label>
+    <div className="backtestFlow">
+      <section className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">1 策略选择</p>
+            <h2>选择回测策略</h2>
+          </div>
+          <strong>{selectedStrategy.name}</strong>
         </div>
-        <div className="actions">
-          <button onClick={runBacktest} disabled={running || !canRunStrategy}>{running ? '回测中...' : '运行回测'}</button>
-          <button className="secondary" onClick={saveStrategy}>保存策略参数</button>
+        <StrategyPicker strategies={strategies} selected={strategy} mode="backtest" disabled={running || loadingDetail} onSelect={selectStrategy} />
+      </section>
+
+      <BacktestParameterPanel
+        instId={instId}
+        bar={bar}
+        stopLossPct={strategyConfig.stopLossPct}
+        trailingDrawdownPct={strategyConfig.trailingDrawdownPct}
+        leverage={strategyConfig.leverage}
+        bestResult={bestResult}
+        candidates={candidates}
+        selected={backtest?.selected}
+        running={running}
+        loadingDetail={loadingDetail}
+        canRun={canRunStrategy}
+        validationMessage={validationMessage}
+        onBarChange={setBar}
+        onStopLossChange={(value) => setStrategyConfig({ ...strategyConfig, stopLossPct: value })}
+        onTrailingChange={(value) => setStrategyConfig({ ...strategyConfig, trailingDrawdownPct: value })}
+        onLeverageChange={(value) => setStrategyConfig({ ...strategyConfig, leverage: value })}
+        onRunGrid={() => runBacktest()}
+        onRunCurrent={runCurrentParameters}
+        onSelectCandidate={(result) => loadBacktestDetail(result)}
+        onSaveStrategy={saveStrategy}
+      />
+
+      <section className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">3 回测结果</p>
+            <h2>曲线与结果分析</h2>
+          </div>
+          <strong>{backtest?.selected ? `${backtest.selected.stopLossPct}% / ${backtest.selected.trailingDrawdownPct}% / ${backtest.selected.leverage}x` : '未选择参数'}</strong>
         </div>
-      </section>
 
-      <section className="panel">
-        <p className="eyebrow">风控参数</p>
-        <h2>开仓限制</h2>
-        <div className="formGrid single">
-          <label>最大仓位 %<input type="number" value={risk.maxPositionPct} onChange={(e) => setRisk({ ...risk, maxPositionPct: Number(e.target.value) })} /></label>
-          <label>最大日亏损 %<input type="number" value={risk.maxDailyLossPct} onChange={(e) => setRisk({ ...risk, maxDailyLossPct: Number(e.target.value) })} /></label>
-          <label>最大连续亏损<input type="number" value={risk.maxConsecutiveLosses} onChange={(e) => setRisk({ ...risk, maxConsecutiveLosses: Number(e.target.value) })} /></label>
-        </div>
-        <div className="actions"><button className="secondary" onClick={saveRisk}>保存风控参数</button></div>
-      </section>
+        {hasDetail ? (
+          <>
+            <div className="resultSummaryStrip">
+              <div><span>策略</span><strong>{strategyName(backtest!.strategyType)}</strong></div>
+              <div><span>K 线数</span><strong>{backtest!.candles}</strong></div>
+              <div><span>净收益</span><strong className={backtest!.selected!.netTotalReturn >= 0 ? 'good' : 'bad'}>{formatPercent(backtest!.selected!.netTotalReturn)}</strong></div>
+              <div><span>费率成本</span><strong>{formatPercent(backtest!.selected!.feeCost)}</strong></div>
+              <div><span>最大回撤</span><strong className="bad">{formatPercent(backtest!.selected!.maxDrawdown)}</strong></div>
+            </div>
 
-      <section className="panel wide">
-        <div className="panelHeader"><div><p className="eyebrow">参数排行</p><h2>回测结果</h2></div><strong>{backtest?.candles ?? 0} 根 K 线</strong></div>
-        {rows.length ? (
-          <table>
-            <thead><tr><th>止损</th><th>移动回撤</th><th>交易数</th><th>胜率</th><th>总收益</th><th>最大回撤</th><th></th></tr></thead>
-            <tbody>{rows.slice(0, 18).map((r) => <tr key={`${r.stopLossPct}-${r.trailingDrawdownPct}`}><td>{r.stopLossPct}%</td><td>{r.trailingDrawdownPct}%</td><td>{r.trades}</td><td>{formatPercent(r.winRate)}</td><td className={r.totalReturn >= 0 ? 'good' : 'bad'}>{formatPercent(r.totalReturn)}</td><td className="bad">{formatPercent(r.maxDrawdown)}</td><td><button className="tableAction" onClick={() => selectResult(r)} disabled={!canRunStrategy}>查看</button></td></tr>)}</tbody>
-          </table>
-        ) : <EmptyState text="暂无回测结果" />}
-      </section>
+            <div className="resultCharts">
+              <div>
+                <p className="eyebrow">K 线交易信号</p>
+                <h2>开平仓点</h2>
+                <CandleChart candles={backtest!.chartCandles} trades={backtest!.tradePoints} />
+              </div>
+              <div>
+                <p className="eyebrow">资金曲线</p>
+                <h2>净值变化</h2>
+                <EquityCurve trades={backtest!.tradePoints} />
+              </div>
+            </div>
 
-      <section className="panel wide">
-        <div className="panelHeader"><div><p className="eyebrow">K 线图</p><h2>交易信号</h2></div><strong>{backtest?.selected ? `${backtest.selected.stopLossPct}% / ${backtest.selected.trailingDrawdownPct}%` : '未选择'}</strong></div>
-        <CandleChart candles={backtest?.chartCandles ?? []} trades={backtest?.tradePoints ?? []} />
-      </section>
+            <div className="analysisBlock">
+              <p className="eyebrow">结果分析</p>
+              <h2>详细指标</h2>
+              <BacktestAnalysisPanel selected={backtest!.selected} trades={backtest!.tradePoints} />
+            </div>
 
-      <section className="panel wide">
-        <p className="eyebrow">资金曲线</p>
-        <h2>回测净值</h2>
-        <EquityCurve trades={backtest?.tradePoints ?? []} />
-      </section>
-
-      <section className="panel wide">
-        <p className="eyebrow">交易记录</p>
-        <h2>最近交易</h2>
-        {backtest?.tradePoints?.length ? (
-          <table>
-            <thead><tr><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>收益</th><th>原因</th></tr></thead>
-            <tbody>{backtest.tradePoints.slice(-40).reverse().map((t) => <tr key={`${t.entryTs}-${t.exitTs}`}><td>{new Date(t.entryTs).toLocaleString('zh-CN', { hour12: false })}</td><td>{formatNumber(t.entryPrice, 8)}</td><td>{new Date(t.exitTs).toLocaleString('zh-CN', { hour12: false })}</td><td>{formatNumber(t.exitPrice, 8)}</td><td className={t.ret >= 0 ? 'good' : 'bad'}>{formatPercent(t.ret)}</td><td>{t.reason === 'stop_loss' ? '止损' : '移动回撤'}</td></tr>)}</tbody>
-          </table>
-        ) : <EmptyState text="暂无交易记录" />}
+            <div>
+              <p className="eyebrow">交易记录</p>
+              <h2>最近交易</h2>
+              {backtest!.tradePoints.length ? (
+                <table>
+                  <thead><tr><th>方向</th><th>开仓时间</th><th>开仓价</th><th>平仓时间</th><th>平仓价</th><th>净收益</th><th>费率</th><th>原因</th></tr></thead>
+                  <tbody>
+                    {backtest!.tradePoints.slice(-40).reverse().map((trade) => (
+                      <tr key={`${trade.entryTs}-${trade.exitTs}`}>
+                        <td className={trade.side === 'short' ? 'good' : 'bad'}>{trade.side === 'short' ? '空单' : '多单'}</td>
+                        <td>{new Date(trade.entryTs).toLocaleString('zh-CN', { hour12: false })}</td>
+                        <td>{formatNumber(trade.entryPrice, 8)}</td>
+                        <td>{new Date(trade.exitTs).toLocaleString('zh-CN', { hour12: false })}</td>
+                        <td>{formatNumber(trade.exitPrice, 8)}</td>
+                        <td className={(trade.netRet ?? trade.ret) >= 0 ? 'good' : 'bad'}>{formatPercent(trade.netRet ?? trade.ret)}</td>
+                        <td>{formatPercent(trade.feeCost)}</td>
+                        <td>{tradeReason(trade.reason)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <EmptyState text="暂无交易记录" />}
+            </div>
+          </>
+        ) : (
+          <EmptyState text={running || loadingDetail ? '正在生成回测结果...' : '请选择一个可用策略，系统会自动加载曲线和分析。'} />
+        )}
       </section>
     </div>
   );

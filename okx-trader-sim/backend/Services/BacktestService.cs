@@ -7,6 +7,7 @@ public sealed class BacktestService
 {
     private static readonly decimal[] StopLossGrid = [0.5m, 0.8m, 1m, 1.2m, 1.5m, 2m];
     private static readonly decimal[] TrailingGrid = [1m, 1.5m, 2m, 2.5m, 3m, 4m];
+    private static readonly decimal[] LeverageGrid = [1m, 2m, 3m, 5m];
     private static readonly HashSet<string> SupportedBars = ["1m", "5m", "15m", "1H", "4H", "1D"];
 
     private readonly OkxClient _client;
@@ -28,17 +29,30 @@ public sealed class BacktestService
         var strategyType = strategy.Definition.Id;
 
         var candles = await _client.GetHistoryCandlesAsync(instId, bar);
+        var leverageCandidates = string.Equals(strategyType, "buy-sell", StringComparison.OrdinalIgnoreCase)
+            ? LeverageGrid
+            : [strategy.DefaultParams.Leverage];
+
         var results = new List<BacktestResultDto>();
-        foreach (var stop in StopLossGrid)
+        foreach (var leverage in leverageCandidates)
         {
-            foreach (var trail in TrailingGrid)
+            foreach (var stop in StopLossGrid)
             {
-                results.Add(strategy.RunBacktest(candles, stop, trail).Summary);
+                foreach (var trail in TrailingGrid)
+                {
+                    if (!StrategyRegistryService.IsLeveragedStopLossAllowed(stop, leverage))
+                    {
+                        continue;
+                    }
+
+                    results.Add(strategy.RunBacktest(candles, stop, trail, leverage).Summary);
+                }
             }
         }
 
         results = results
-            .OrderByDescending(x => x.TotalReturn)
+            .OrderByDescending(x => x.NetTotalReturn)
+            .ThenByDescending(x => x.MaxDrawdown)
             .ThenByDescending(x => x.WinRate)
             .ToList();
 
@@ -67,10 +81,14 @@ public sealed class BacktestService
         var bar = NormalizeBar(request.Bar);
         var strategy = _strategyRegistry.GetRunnable(request.StrategyType);
         var strategyType = strategy.Definition.Id;
-        var stopLoss = request.StopLossPct ?? 1m;
-        var trailing = request.TrailingDrawdownPct ?? 2m;
+        var stopLoss = request.StopLossPct ?? strategy.DefaultParams.StopLossPct;
+        var trailing = request.TrailingDrawdownPct ?? strategy.DefaultParams.TrailingDrawdownPct;
+        var leverage = request.Leverage ?? strategy.DefaultParams.Leverage;
+
+        StrategyRegistryService.ValidateLeveragedStopLoss(stopLoss, leverage);
+
         var candles = await _client.GetHistoryCandlesAsync(instId, bar);
-        var detail = strategy.RunBacktest(candles, stopLoss, trailing);
+        var detail = strategy.RunBacktest(candles, stopLoss, trailing, leverage);
 
         var latest = await _repository.GetLatestBacktestAsync();
         var doc = latest ?? new BacktestDocument();

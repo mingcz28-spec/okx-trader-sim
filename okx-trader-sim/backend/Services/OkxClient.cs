@@ -25,19 +25,51 @@ public sealed class OkxClient
         _encryption = encryption;
     }
 
-    public async Task<OkxBalanceResponse> GetBalanceAsync(string mode)
+    public async Task<OkxBalanceResponse> GetBalanceAsync(string mode) =>
+        await SendPrivateAsync<OkxBalanceResponse>(HttpMethod.Get, "/api/v5/account/balance", mode);
+
+    public async Task<OkxPositionsResponse> GetPositionsAsync(string mode) =>
+        await SendPrivateAsync<OkxPositionsResponse>(HttpMethod.Get, "/api/v5/account/positions", mode);
+
+    public async Task<OkxOrdersHistoryResponse> GetOrdersHistoryAsync(string mode) =>
+        await SendPrivateAsync<OkxOrdersHistoryResponse>(HttpMethod.Get, "/api/v5/trade/orders-history-archive?instType=SWAP&limit=10", mode);
+
+    public async Task<OkxAccountConfigResponse> GetAccountConfigAsync(string mode) =>
+        await SendPrivateAsync<OkxAccountConfigResponse>(HttpMethod.Get, "/api/v5/account/config", mode);
+
+    public async Task<OkxSetLeverageResponse> SetLeverageAsync(string instId, decimal leverage, string posSide, string mode = "live")
     {
-        return await GetPrivateAsync<OkxBalanceResponse>("/api/v5/account/balance", mode);
+        var payload = new
+        {
+            instId,
+            lever = leverage.ToString(CultureInfo.InvariantCulture),
+            mgnMode = "cross",
+            posSide
+        };
+
+        var response = await SendPrivateAsync<OkxSetLeverageResponse>(HttpMethod.Post, "/api/v5/account/set-leverage", mode, payload);
+        EnsureSingleDataSuccess(response.Code, response.Msg, response.Data.FirstOrDefault()?.SCode, response.Data.FirstOrDefault()?.SMsg);
+        return response;
     }
 
-    public async Task<OkxPositionsResponse> GetPositionsAsync(string mode)
+    public async Task<OkxPlaceOrderResponse> PlaceOrderAsync(OkxPlaceOrderRequest payload, string mode = "live")
     {
-        return await GetPrivateAsync<OkxPositionsResponse>("/api/v5/account/positions", mode);
+        var response = await SendPrivateAsync<OkxPlaceOrderResponse>(HttpMethod.Post, "/api/v5/trade/order", mode, payload);
+        EnsureSingleDataSuccess(response.Code, response.Msg, response.Data.FirstOrDefault()?.SCode, response.Data.FirstOrDefault()?.SMsg);
+        return response;
     }
 
-    public async Task<OkxOrdersHistoryResponse> GetOrdersHistoryAsync(string mode)
+    public async Task<OkxCancelOrderResponse> CancelOrderAsync(string instId, string orderId, string mode = "live")
     {
-        return await GetPrivateAsync<OkxOrdersHistoryResponse>("/api/v5/trade/orders-history-archive?instType=SWAP&limit=10", mode);
+        var payload = new
+        {
+            instId,
+            ordId = orderId
+        };
+
+        var response = await SendPrivateAsync<OkxCancelOrderResponse>(HttpMethod.Post, "/api/v5/trade/cancel-order", mode, payload);
+        EnsureSingleDataSuccess(response.Code, response.Msg, response.Data.FirstOrDefault()?.SCode, response.Data.FirstOrDefault()?.SMsg);
+        return response;
     }
 
     public async Task<List<CandlePointDto>> GetHistoryCandlesAsync(string instId, string bar, int limit = 100, int pages = 10)
@@ -51,7 +83,7 @@ public sealed class OkxClient
             if (!string.IsNullOrEmpty(after)) path += $"&after={Uri.EscapeDataString(after)}";
 
             var response = await _http.GetFromJsonAsync<OkxCandlesResponse>($"{BaseUrl}{path}");
-            if (response?.Code != "0") throw new InvalidOperationException(response?.Msg ?? "OKX K线读取失败");
+            if (response?.Code != "0") throw new InvalidOperationException(response?.Msg ?? "OKX K 线读取失败");
             if (response.Data.Count == 0) break;
             rows.AddRange(response.Data);
             after = response.Data[^1][0];
@@ -61,6 +93,59 @@ public sealed class OkxClient
             .Select(x => new CandlePointDto(ToLong(x.ElementAtOrDefault(0)), ToDecimal(x.ElementAtOrDefault(1)), ToDecimal(x.ElementAtOrDefault(2)), ToDecimal(x.ElementAtOrDefault(3)), ToDecimal(x.ElementAtOrDefault(4))))
             .OrderBy(x => x.Ts)
             .ToList();
+    }
+
+    public async Task<List<CandlePointDto>> GetMarketCandlesAsync(string instId, string bar, int limit = 2)
+    {
+        var safeInstId = string.IsNullOrWhiteSpace(instId) ? "BTC-USDT-SWAP" : instId.Trim().ToUpperInvariant();
+        var safeLimit = Math.Clamp(limit, 1, 100);
+        var path = $"/api/v5/market/candles?instId={Uri.EscapeDataString(safeInstId)}&bar={Uri.EscapeDataString(bar)}&limit={safeLimit}";
+        var response = await _http.GetFromJsonAsync<OkxCandlesResponse>($"{BaseUrl}{path}");
+        if (response?.Code != "0") throw new InvalidOperationException(response?.Msg ?? "OKX market candles read failed");
+
+        return response.Data
+            .Select(x => new CandlePointDto(ToLong(x.ElementAtOrDefault(0)), ToDecimal(x.ElementAtOrDefault(1)), ToDecimal(x.ElementAtOrDefault(2)), ToDecimal(x.ElementAtOrDefault(3)), ToDecimal(x.ElementAtOrDefault(4))))
+            .OrderBy(x => x.Ts)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<InstrumentSuggestionDto>> SearchSwapInstrumentsAsync(string keyword, int limit = 20)
+    {
+        var query = (keyword ?? string.Empty).Trim().ToUpperInvariant();
+        if (query.Length < 2) return [];
+
+        var response = await _http.GetFromJsonAsync<OkxInstrumentsResponse>($"{BaseUrl}/api/v5/public/instruments?instType=SWAP");
+        if (response?.Code != "0") throw new InvalidOperationException(response?.Msg ?? "OKX instrument search failed");
+
+        return response.Data
+            .Where(x => !string.IsNullOrWhiteSpace(x.InstId) && x.InstId.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => string.Equals(x.InstId, query, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(x => x.InstId)
+            .Take(Math.Clamp(limit, 1, 50))
+            .Select(x => new InstrumentSuggestionDto(x.InstId ?? string.Empty, x.BaseCcy ?? string.Empty, x.QuoteCcy ?? string.Empty, x.InstType ?? "SWAP", x.State ?? string.Empty))
+            .ToList();
+    }
+
+    public async Task<OkxInstrumentData?> GetSwapInstrumentAsync(string instId)
+    {
+        var safeInstId = string.IsNullOrWhiteSpace(instId) ? "BTC-USDT-SWAP" : instId.Trim().ToUpperInvariant();
+        var response = await _http.GetFromJsonAsync<OkxInstrumentsResponse>($"{BaseUrl}/api/v5/public/instruments?instType=SWAP&instId={Uri.EscapeDataString(safeInstId)}");
+        if (response?.Code != "0") throw new InvalidOperationException(response?.Msg ?? "OKX instrument read failed");
+        return response.Data.FirstOrDefault();
+    }
+
+    public async Task<decimal?> GetLatestPriceAsync(string instId)
+    {
+        var book = await GetOrderBookAsync(instId, 1);
+        var data = book.Data.FirstOrDefault();
+        if (data is null) return null;
+
+        var bid = ToDecimal(data.Bids.FirstOrDefault()?.ElementAtOrDefault(0));
+        var ask = ToDecimal(data.Asks.FirstOrDefault()?.ElementAtOrDefault(0));
+        if (bid > 0 && ask > 0) return (bid + ask) / 2m;
+        if (bid > 0) return bid;
+        if (ask > 0) return ask;
+        return null;
     }
 
     public async Task<OkxOrderBookResponse> GetOrderBookAsync(string instId, int size = 20)
@@ -80,7 +165,7 @@ public sealed class OkxClient
         return Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(prehash)));
     }
 
-    private async Task<T> GetPrivateAsync<T>(string requestPath, string mode)
+    private async Task<T> SendPrivateAsync<T>(HttpMethod method, string requestPath, string mode, object? payload = null)
     {
         var config = await _repository.GetApiConnectionAsync();
         if (config is null || string.IsNullOrWhiteSpace(config.ApiKey) || string.IsNullOrWhiteSpace(config.EncryptedSecretKey) || string.IsNullOrWhiteSpace(config.EncryptedPassphrase))
@@ -90,14 +175,19 @@ public sealed class OkxClient
 
         var secret = _encryption.Decrypt(config.EncryptedSecretKey);
         var passphrase = _encryption.Decrypt(config.EncryptedPassphrase);
+        var body = payload is null ? string.Empty : JsonSerializer.Serialize(payload, JsonOptions);
         var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
-        var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}{requestPath}");
+        var request = new HttpRequestMessage(method, $"{BaseUrl}{requestPath}");
         request.Headers.Add("OK-ACCESS-KEY", config.ApiKey);
-        request.Headers.Add("OK-ACCESS-SIGN", BuildSignature(timestamp, "GET", requestPath, string.Empty, secret));
+        request.Headers.Add("OK-ACCESS-SIGN", BuildSignature(timestamp, method.Method, requestPath, body, secret));
         request.Headers.Add("OK-ACCESS-TIMESTAMP", timestamp);
         request.Headers.Add("OK-ACCESS-PASSPHRASE", passphrase);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         if (mode == "demo") request.Headers.Add("x-simulated-trading", "1");
+        if (!string.IsNullOrEmpty(body))
+        {
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        }
 
         using var response = await _http.SendAsync(request);
         if (!response.IsSuccessStatusCode)
@@ -107,6 +197,19 @@ public sealed class OkxClient
 
         var json = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<T>(json, JsonOptions) ?? throw new InvalidOperationException("OKX 响应解析失败");
+    }
+
+    private static void EnsureSingleDataSuccess(string? code, string? msg, string? sCode, string? sMsg)
+    {
+        if (!string.Equals(code, "0", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(msg ?? "OKX request failed");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sCode) && !string.Equals(sCode, "0", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(sMsg ?? $"OKX request failed: {sCode}");
+        }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -202,4 +305,96 @@ public sealed class OkxOrderBookData
     [JsonPropertyName("asks")] public List<string[]> Asks { get; set; } = [];
     [JsonPropertyName("bids")] public List<string[]> Bids { get; set; } = [];
     [JsonPropertyName("ts")] public string? Ts { get; set; }
+}
+
+public sealed class OkxInstrumentsResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxInstrumentData> Data { get; set; } = [];
+}
+
+public sealed class OkxInstrumentData
+{
+    [JsonPropertyName("instType")] public string? InstType { get; set; }
+    [JsonPropertyName("instId")] public string? InstId { get; set; }
+    [JsonPropertyName("baseCcy")] public string? BaseCcy { get; set; }
+    [JsonPropertyName("quoteCcy")] public string? QuoteCcy { get; set; }
+    [JsonPropertyName("state")] public string? State { get; set; }
+    [JsonPropertyName("minSz")] public string? MinSz { get; set; }
+    [JsonPropertyName("lotSz")] public string? LotSz { get; set; }
+    [JsonPropertyName("ctVal")] public string? CtVal { get; set; }
+}
+
+public sealed class OkxAccountConfigResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxAccountConfigData> Data { get; set; } = [];
+}
+
+public sealed class OkxAccountConfigData
+{
+    [JsonPropertyName("posMode")] public string? PosMode { get; set; }
+    [JsonPropertyName("acctLv")] public string? AcctLv { get; set; }
+    [JsonPropertyName("greeksType")] public string? GreeksType { get; set; }
+    [JsonPropertyName("level")] public string? Level { get; set; }
+}
+
+public sealed class OkxSetLeverageResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxSetLeverageData> Data { get; set; } = [];
+}
+
+public sealed class OkxSetLeverageData
+{
+    [JsonPropertyName("lever")] public string? Lever { get; set; }
+    [JsonPropertyName("mgnMode")] public string? MgnMode { get; set; }
+    [JsonPropertyName("instId")] public string? InstId { get; set; }
+    [JsonPropertyName("posSide")] public string? PosSide { get; set; }
+    [JsonPropertyName("sCode")] public string? SCode { get; set; }
+    [JsonPropertyName("sMsg")] public string? SMsg { get; set; }
+}
+
+public sealed class OkxPlaceOrderRequest
+{
+    [JsonPropertyName("instId")] public string InstId { get; set; } = string.Empty;
+    [JsonPropertyName("tdMode")] public string TdMode { get; set; } = "cross";
+    [JsonPropertyName("side")] public string Side { get; set; } = string.Empty;
+    [JsonPropertyName("posSide")] public string PosSide { get; set; } = string.Empty;
+    [JsonPropertyName("ordType")] public string OrdType { get; set; } = "market";
+    [JsonPropertyName("sz")] public string Size { get; set; } = "1";
+    [JsonPropertyName("reduceOnly")] public bool? ReduceOnly { get; set; }
+}
+
+public sealed class OkxPlaceOrderResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxPlaceOrderData> Data { get; set; } = [];
+}
+
+public sealed class OkxPlaceOrderData
+{
+    [JsonPropertyName("ordId")] public string? OrdId { get; set; }
+    [JsonPropertyName("clOrdId")] public string? ClOrdId { get; set; }
+    [JsonPropertyName("tag")] public string? Tag { get; set; }
+    [JsonPropertyName("sCode")] public string? SCode { get; set; }
+    [JsonPropertyName("sMsg")] public string? SMsg { get; set; }
+}
+
+public sealed class OkxCancelOrderResponse
+{
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")] public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")] public List<OkxCancelOrderData> Data { get; set; } = [];
+}
+
+public sealed class OkxCancelOrderData
+{
+    [JsonPropertyName("ordId")] public string? OrdId { get; set; }
+    [JsonPropertyName("sCode")] public string? SCode { get; set; }
+    [JsonPropertyName("sMsg")] public string? SMsg { get; set; }
 }
