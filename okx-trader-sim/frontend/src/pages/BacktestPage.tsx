@@ -8,6 +8,13 @@ import { StrategyPicker } from '../components/backtest/StrategyPicker';
 import { EmptyState } from '../components/common/EmptyState';
 import type { AppState, BacktestBar, BacktestResult, StrategyDefinition, StrategyType } from '../types';
 import { formatNumber, formatPercent } from '../utils/format';
+import {
+  DEFAULT_STRATEGY_PARAMS,
+  DEFAULT_STRATEGY_TYPE,
+  findStrategyDefinition,
+  getLeveragedStopLossValidationMessage,
+  getStrategyName,
+} from '../utils/strategy';
 
 type AppContext = {
   state: AppState | null;
@@ -16,20 +23,6 @@ type AppContext = {
   setError: (message: string) => void;
 };
 
-const fallbackParams = { stopLossPct: 1, trailingDrawdownPct: 2, leverage: 3 };
-const fallbackParameterDefinitions = [
-  { id: 'stopLossPct', label: '止损比例', description: '价格偏离入场价达到该比例时退出。', value: 1, unit: '%' },
-  { id: 'trailingDrawdownPct', label: '浮盈回撤比例', description: '从开仓后最大浮盈回吐达到该比例时退出。', value: 2, unit: '%' },
-  { id: 'leverage', label: '杠杆', description: '收益按该杠杆放大，同时扣除双边 taker 费率。', value: 3, unit: 'x' },
-];
-
-const fallbackStrategies: StrategyDefinition[] = [
-  { id: 'buy-sell', name: '买入卖出策略', description: '过去 20 个点的均值曲线向上开多，向下开空；平仓使用止损和浮盈回撤。', status: 'active', supportsBacktest: true, supportsRealtime: true, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
-  { id: 'trend', name: '趋势跟随策略', description: '价格站上 20 均线并接近前高时开多，跌回均线或触发止损后退出。', status: 'active', supportsBacktest: true, supportsRealtime: true, defaultParams: { stopLossPct: 1.2, trailingDrawdownPct: 2.5, leverage: 3 }, parameters: fallbackParameterDefinitions },
-  { id: 'mean-reversion', name: '均值回归策略', description: '价格偏离均值后等待回归确认，当前待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
-  { id: 'breakout', name: '突破策略', description: '价格突破关键区间后跟随入场，当前待接入。', status: 'pending', supportsBacktest: false, supportsRealtime: false, defaultParams: fallbackParams, parameters: fallbackParameterDefinitions },
-];
-
 function tradeReason(reason: string) {
   if (reason === 'stop_loss') return '止损';
   if (reason === 'trailing_exit') return '浮盈回撤';
@@ -37,34 +30,38 @@ function tradeReason(reason: string) {
   return reason;
 }
 
-function getValidationMessage(stopLossPct: number, leverage: number) {
-  return stopLossPct * leverage > 10 ? '止损比例 * 杠杆不能超过 10%。' : '';
-}
-
 export function BacktestPage({ app }: { app: AppContext }) {
   const state = app.state!;
-  const initialStrategy = state.strategyConfig.strategyType ?? state.backtest?.strategyType ?? 'buy-sell';
+  const initialStrategy = state.strategyConfig.strategyType ?? state.backtest?.strategyType ?? DEFAULT_STRATEGY_TYPE;
   const [strategy, setStrategy] = useState<StrategyType>(initialStrategy);
-  const [strategies, setStrategies] = useState<StrategyDefinition[]>(fallbackStrategies);
+  const [strategies, setStrategies] = useState<StrategyDefinition[]>([]);
   const [bar, setBar] = useState<BacktestBar>((state.backtest?.bar as BacktestBar) ?? '1H');
   const [strategyConfig, setStrategyConfig] = useState({
     ...state.strategyConfig,
     strategyType: initialStrategy,
+    movingAveragePeriod: state.strategyConfig.movingAveragePeriod ?? DEFAULT_STRATEGY_PARAMS.movingAveragePeriod,
+    stopLossPct: state.strategyConfig.stopLossPct ?? DEFAULT_STRATEGY_PARAMS.stopLossPct,
+    trailingDrawdownPct: state.strategyConfig.trailingDrawdownPct ?? DEFAULT_STRATEGY_PARAMS.trailingDrawdownPct,
     leverage: state.strategyConfig.leverage ?? 3,
   });
   const [running, setRunning] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const instId = state.backtest?.instId || 'RAVE-USDT-SWAP';
   const backtest = state.backtest;
-  const selectedStrategy = strategies.find((item) => item.id === strategy) ?? strategies[0];
-  const canRunStrategy = selectedStrategy.status === 'active' && selectedStrategy.supportsBacktest;
+  const selectedStrategy = findStrategyDefinition(strategies, strategy);
+  const canRunStrategy = selectedStrategy?.status === 'active' && selectedStrategy.supportsBacktest;
   const candidates = useMemo(
     () => [...(backtest?.results?.length ? backtest.results : backtest?.top ?? [])].sort((a, b) => b.netTotalReturn - a.netTotalReturn),
     [backtest],
   );
   const bestResult = candidates[0] ?? null;
   const hasDetail = Boolean(backtest?.selected && backtest.chartCandles.length && backtest.tradePoints.length);
-  const validationMessage = getValidationMessage(Number(strategyConfig.stopLossPct), Number(strategyConfig.leverage));
+  const validationMessage = getLeveragedStopLossValidationMessage({
+    movingAveragePeriod: Number(strategyConfig.movingAveragePeriod),
+    stopLossPct: Number(strategyConfig.stopLossPct),
+    trailingDrawdownPct: Number(strategyConfig.trailingDrawdownPct),
+    leverage: Number(strategyConfig.leverage),
+  });
 
   useEffect(() => {
     api.getStrategies()
@@ -77,7 +74,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
     if (!nextDefinition || nextDefinition.status !== 'active' || !nextDefinition.supportsBacktest) return;
 
     setStrategy(next);
-    const nextConfig = { ...strategyConfig, strategyType: next, leverage: nextDefinition.defaultParams.leverage ?? strategyConfig.leverage };
+    const nextConfig = { ...strategyConfig, strategyType: next, movingAveragePeriod: nextDefinition.defaultParams.movingAveragePeriod ?? strategyConfig.movingAveragePeriod, leverage: nextDefinition.defaultParams.leverage ?? strategyConfig.leverage };
     setStrategyConfig(nextConfig);
     app.setState({ ...state, strategyConfig: nextConfig, backtest: state.backtest?.strategyType === next ? state.backtest : null });
     await runBacktest(next, nextConfig);
@@ -99,13 +96,14 @@ export function BacktestPage({ app }: { app: AppContext }) {
       const bestConfig = {
         ...config,
         strategyType: targetStrategy,
+        movingAveragePeriod: best.movingAveragePeriod,
         stopLossPct: best.stopLossPct,
         trailingDrawdownPct: best.trailingDrawdownPct,
         leverage: best.leverage,
       };
       setStrategyConfig(bestConfig);
       await loadBacktestDetail(best, targetStrategy, bestConfig, result);
-      app.setMessage(`已为 ${strategyName(targetStrategy)} 找到最优参数：止损 ${best.stopLossPct}% / 回撤 ${best.trailingDrawdownPct}% / 杠杆 ${best.leverage}x。`);
+        app.setMessage(`已为 ${getStrategyName(strategies, targetStrategy)} 找到最优参数：均线 ${best.movingAveragePeriod} / 止损收益 ${best.stopLossPct}% / 回撤 ${best.trailingDrawdownPct}% / 杠杆 ${best.leverage}x。`);
     } catch (err) {
       app.setError(err instanceof Error ? err.message : '回测失败');
     } finally {
@@ -121,6 +119,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
         instId,
         bar,
         strategyType: targetStrategy,
+        movingAveragePeriod: result.movingAveragePeriod,
         stopLossPct: result.stopLossPct,
         trailingDrawdownPct: result.trailingDrawdownPct,
         leverage: result.leverage,
@@ -128,6 +127,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
       const nextConfig = {
         ...config,
         strategyType: targetStrategy,
+        movingAveragePeriod: result.movingAveragePeriod,
         stopLossPct: result.stopLossPct,
         trailingDrawdownPct: result.trailingDrawdownPct,
         leverage: result.leverage,
@@ -149,6 +149,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
     }
 
     const manualResult: BacktestResult = {
+      movingAveragePeriod: Number(strategyConfig.movingAveragePeriod),
       stopLossPct: Number(strategyConfig.stopLossPct),
       trailingDrawdownPct: Number(strategyConfig.trailingDrawdownPct),
       leverage: Number(strategyConfig.leverage),
@@ -161,7 +162,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
       feeCost: 0,
     };
     await loadBacktestDetail(manualResult, strategy, strategyConfig);
-    app.setMessage(`已按当前参数加载回测：止损 ${manualResult.stopLossPct}% / 回撤 ${manualResult.trailingDrawdownPct}% / 杠杆 ${manualResult.leverage}x。`);
+    app.setMessage(`已按当前参数加载回测：均线 ${manualResult.movingAveragePeriod} / 止损收益 ${manualResult.stopLossPct}% / 回撤 ${manualResult.trailingDrawdownPct}% / 杠杆 ${manualResult.leverage}x。`);
   }
 
   async function saveStrategy() {
@@ -180,10 +181,6 @@ export function BacktestPage({ app }: { app: AppContext }) {
     }
   }
 
-  function strategyName(id: StrategyType) {
-    return strategies.find((item) => item.id === id)?.name ?? id;
-  }
-
   return (
     <div className="backtestFlow">
       <section className="panel wide">
@@ -192,7 +189,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
             <p className="eyebrow">1 策略选择</p>
             <h2>选择回测策略</h2>
           </div>
-          <strong>{selectedStrategy.name}</strong>
+          <strong>{getStrategyName(strategies, strategy)}</strong>
         </div>
         <StrategyPicker strategies={strategies} selected={strategy} mode="backtest" disabled={running || loadingDetail} onSelect={selectStrategy} />
       </section>
@@ -200,6 +197,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
       <BacktestParameterPanel
         instId={instId}
         bar={bar}
+        movingAveragePeriod={strategyConfig.movingAveragePeriod}
         stopLossPct={strategyConfig.stopLossPct}
         trailingDrawdownPct={strategyConfig.trailingDrawdownPct}
         leverage={strategyConfig.leverage}
@@ -211,6 +209,7 @@ export function BacktestPage({ app }: { app: AppContext }) {
         canRun={canRunStrategy}
         validationMessage={validationMessage}
         onBarChange={setBar}
+        onMovingAveragePeriodChange={(value) => setStrategyConfig({ ...strategyConfig, movingAveragePeriod: value })}
         onStopLossChange={(value) => setStrategyConfig({ ...strategyConfig, stopLossPct: value })}
         onTrailingChange={(value) => setStrategyConfig({ ...strategyConfig, trailingDrawdownPct: value })}
         onLeverageChange={(value) => setStrategyConfig({ ...strategyConfig, leverage: value })}
@@ -226,13 +225,13 @@ export function BacktestPage({ app }: { app: AppContext }) {
             <p className="eyebrow">3 回测结果</p>
             <h2>曲线与结果分析</h2>
           </div>
-          <strong>{backtest?.selected ? `${backtest.selected.stopLossPct}% / ${backtest.selected.trailingDrawdownPct}% / ${backtest.selected.leverage}x` : '未选择参数'}</strong>
+          <strong>{backtest?.selected ? `${backtest.selected.movingAveragePeriod} / ${backtest.selected.stopLossPct}% / ${backtest.selected.trailingDrawdownPct}% / ${backtest.selected.leverage}x` : '未选择参数'}</strong>
         </div>
 
         {hasDetail ? (
           <>
             <div className="resultSummaryStrip">
-              <div><span>策略</span><strong>{strategyName(backtest!.strategyType)}</strong></div>
+              <div><span>策略</span><strong>{getStrategyName(strategies, backtest!.strategyType)}</strong></div>
               <div><span>K 线数</span><strong>{backtest!.candles}</strong></div>
               <div><span>净收益</span><strong className={backtest!.selected!.netTotalReturn >= 0 ? 'good' : 'bad'}>{formatPercent(backtest!.selected!.netTotalReturn)}</strong></div>
               <div><span>费率成本</span><strong>{formatPercent(backtest!.selected!.feeCost)}</strong></div>

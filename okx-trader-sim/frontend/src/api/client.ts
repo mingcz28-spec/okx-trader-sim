@@ -9,7 +9,7 @@ import type {
   LiveRealtimeSessionPayload,
   OkxAccountConfig,
   OrderBook,
-  RealtimeConsole,
+  RealtimeTradingSummary,
   RealtimeWorkspace,
   RiskConfig,
   StrategyConfig,
@@ -57,19 +57,17 @@ export const api = {
     envelope<RiskConfig>('/api/risk-config', { method: 'PUT', body: JSON.stringify(payload) }),
   saveStrategyConfig: (payload: StrategyConfig) =>
     envelope<StrategyConfig>('/api/strategy-config', { method: 'PUT', body: JSON.stringify(payload) }),
-  openSimulatedTrade: (payload: { symbol: string; side: 'buy' | 'sell'; leverage: number; notional: number }) =>
-    envelope<AppState>('/api/trades/simulated', { method: 'POST', body: JSON.stringify(payload) }),
-  closeAllSimulated: () => envelope<AppState>('/api/trades/simulated', { method: 'DELETE' }),
   getStrategies: () => envelope<StrategyDefinition[]>('/api/strategies'),
   runBacktest: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType }) =>
     envelope<BacktestSummary>('/api/backtests', { method: 'POST', body: JSON.stringify(payload) }),
-  loadBacktestDetail: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType; stopLossPct: number; trailingDrawdownPct: number; leverage: number }) =>
+  loadBacktestDetail: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType; movingAveragePeriod: number; stopLossPct: number; trailingDrawdownPct: number; leverage: number }) =>
     envelope<BacktestSummary>('/api/backtests/detail', { method: 'POST', body: JSON.stringify(payload) }),
-  getRealtimeConsole: () => envelope<RealtimeConsole>('/api/realtime/console'),
   searchRealtimeInstruments: (query: string) =>
     envelope<InstrumentSuggestion[]>(`/api/realtime/instruments?q=${encodeURIComponent(query)}`),
   getRealtimeWorkspace: (payload: { instId: string; bar: BacktestBar; strategyType: StrategyType; confirmed?: boolean }) =>
     envelope<RealtimeWorkspace>(`/api/realtime/workspace?instId=${encodeURIComponent(payload.instId)}&bar=${encodeURIComponent(payload.bar)}&strategyType=${encodeURIComponent(payload.strategyType)}&confirmed=${payload.confirmed ? 'true' : 'false'}`),
+  getLiveReconciliation: () =>
+    envelope<RealtimeTradingSummary | null>('/api/realtime/live-reconciliation'),
   confirmRealtimeSession: (payload: ConfirmRealtimeSessionPayload) =>
     envelope<RealtimeWorkspace>('/api/realtime/session', { method: 'PUT', body: JSON.stringify(payload) }),
   forceExitRealtimeSession: () =>

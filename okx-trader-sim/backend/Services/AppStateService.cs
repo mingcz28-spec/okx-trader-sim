@@ -22,6 +22,7 @@ public sealed class AppStateService
         var orders = await _repository.GetOrderHistoryAsync();
         var positions = await _repository.GetPositionsAsync();
         var backtest = await _repository.GetLatestBacktestAsync();
+        var liveSession = await _repository.GetLiveRealtimeSessionAsync();
 
         return new AppStateDto(
             ToApiSummary(api),
@@ -32,6 +33,7 @@ public sealed class AppStateService
             state.DailyPnl,
             state.DrawdownPct,
             state.StrategyStatus,
+            RealtimeSummaryBuilder.BuildLiveTradingSummary(liveSession),
             state.CurrencyMode,
             balances.Select(ToBalanceDto).ToList(),
             orders.Select(ToOrderDto).ToList(),
@@ -56,7 +58,7 @@ public sealed class AppStateService
         new(doc.MaxPositionPct, doc.MaxDailyLossPct, doc.MaxConsecutiveLosses);
 
     public static StrategyConfigDto ToStrategyDto(StrategyConfigDocument doc) =>
-        new(string.IsNullOrWhiteSpace(doc.StrategyType) ? "buy-sell" : doc.StrategyType, doc.Enabled, doc.EntrySide, doc.StopLossPct, doc.TrailingDrawdownPct, doc.Leverage, doc.HighestPriceSinceEntry, doc.EntryPrice, doc.LastSignal);
+        new(string.IsNullOrWhiteSpace(doc.StrategyType) ? "buy-sell" : doc.StrategyType, doc.Enabled, doc.EntrySide, doc.MovingAveragePeriod, doc.StopLossPct, doc.TrailingDrawdownPct, doc.Leverage, doc.HighestPriceSinceEntry, doc.EntryPrice, doc.LastSignal);
 
     public static PositionDto ToPositionDto(PositionDocument doc) =>
         new(doc.Id, doc.Symbol, doc.Side, doc.Leverage, doc.MarginMode, doc.Quantity, doc.Notional, doc.MarginUsed, doc.UnrealizedPnl, doc.EntryPrice, doc.MarkPrice, doc.PnlPct, doc.OpenedAt);

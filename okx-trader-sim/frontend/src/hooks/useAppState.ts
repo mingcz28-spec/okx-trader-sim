@@ -8,15 +8,15 @@ export function useAppState() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       setState(await api.getState());
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载状态失败');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 

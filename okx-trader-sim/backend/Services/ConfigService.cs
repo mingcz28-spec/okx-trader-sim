@@ -60,6 +60,7 @@ public sealed class ConfigService
             StrategyType = _strategyRegistry.NormalizeStrategyId(dto.StrategyType),
             Enabled = dto.Enabled,
             EntrySide = "buy",
+            MovingAveragePeriod = dto.MovingAveragePeriod,
             StopLossPct = dto.StopLossPct,
             TrailingDrawdownPct = dto.TrailingDrawdownPct,
             Leverage = dto.Leverage,

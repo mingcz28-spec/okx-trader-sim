@@ -15,20 +15,6 @@ public sealed class RealtimeController : ControllerBase
         _service = service;
     }
 
-    [HttpGet("console")]
-    public async Task<ActionResult<ApiEnvelope<object>>> GetConsole()
-    {
-        try
-        {
-            var result = await _service.GetConsoleAsync();
-            return Ok(new ApiEnvelope<object>(true, result));
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new ApiEnvelope<object>(false, null, ex.Message, "REALTIME_FAILED"));
-        }
-    }
-
     [HttpGet("instruments")]
     public async Task<ActionResult<ApiEnvelope<IReadOnlyList<InstrumentSuggestionDto>>>> SearchInstruments([FromQuery] string? q)
     {
@@ -54,6 +40,20 @@ public sealed class RealtimeController : ControllerBase
         catch (Exception ex)
         {
             return BadRequest(new ApiEnvelope<RealtimeWorkspaceDto>(false, null, ex.Message, "REALTIME_WORKSPACE_FAILED"));
+        }
+    }
+
+    [HttpGet("live-reconciliation")]
+    public async Task<ActionResult<ApiEnvelope<RealtimeTradingSummaryDto?>>> GetLiveReconciliation()
+    {
+        try
+        {
+            var result = await _service.GetLiveReconciliationAsync();
+            return Ok(new ApiEnvelope<RealtimeTradingSummaryDto?>(true, result));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiEnvelope<RealtimeTradingSummaryDto?>(false, null, ex.Message, "REALTIME_LIVE_RECONCILIATION_FAILED"));
         }
     }
 

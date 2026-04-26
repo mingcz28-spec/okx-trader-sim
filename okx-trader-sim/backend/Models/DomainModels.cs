@@ -1,4 +1,4 @@
-using MongoDB.Bson;
+﻿using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace OkxTraderSim.Api.Models;
@@ -44,6 +44,7 @@ public sealed class StrategyConfigDocument
     public string StrategyType { get; set; } = "buy-sell";
     public bool Enabled { get; set; }
     public string EntrySide { get; set; } = "buy";
+    public int MovingAveragePeriod { get; set; } = 10;
     public decimal StopLossPct { get; set; } = 1m;
     public decimal TrailingDrawdownPct { get; set; } = 2m;
     public decimal Leverage { get; set; } = 3m;
@@ -187,6 +188,7 @@ public sealed class RealtimeSessionDocument
     public string InstId { get; set; } = "RAVE-USDT-SWAP";
     public string Bar { get; set; } = "1m";
     public string StrategyType { get; set; } = "buy-sell";
+    public int MovingAveragePeriod { get; set; } = 10;
     public decimal StopLossPct { get; set; } = 1m;
     public decimal TrailingDrawdownPct { get; set; } = 2m;
     public decimal Leverage { get; set; } = 3m;
@@ -242,7 +244,7 @@ public sealed class RealtimeSessionDocument
 
 public sealed record ApiConnectionSummaryDto(string ApiKeyMasked, bool HasApiKey, DateTime? UpdatedAt);
 public sealed record RiskConfigDto(decimal MaxPositionPct, decimal MaxDailyLossPct, int MaxConsecutiveLosses);
-public sealed record StrategyConfigDto(string StrategyType, bool Enabled, string EntrySide, decimal StopLossPct, decimal TrailingDrawdownPct, decimal Leverage, decimal? HighestPriceSinceEntry, decimal? EntryPrice, string LastSignal);
+public sealed record StrategyConfigDto(string StrategyType, bool Enabled, string EntrySide, int MovingAveragePeriod, decimal StopLossPct, decimal TrailingDrawdownPct, decimal Leverage, decimal? HighestPriceSinceEntry, decimal? EntryPrice, string LastSignal);
 public sealed record BalanceDetailDto(string Ccy, decimal Equity, decimal CashBalance, decimal AvailableBalance);
 public sealed record OrderHistoryDto(string Id, string Symbol, string Side, string OrderType, string State, decimal Price, decimal Size, decimal FilledSize, DateTime CreatedAt, string? PosSide = null, decimal? AvgPrice = null, decimal? Fee = null, string? FeeCcy = null, decimal? Pnl = null);
 public sealed record PositionDto(string Id, string Symbol, string Side, decimal Leverage, string? MarginMode, decimal? Quantity, decimal Notional, decimal? MarginUsed, decimal? UnrealizedPnl, decimal EntryPrice, decimal MarkPrice, decimal PnlPct, DateTime OpenedAt);
@@ -282,6 +284,7 @@ public sealed record BacktestTradePointDto(
     string FeeRateSource = "fallback",
     string ReconciliationStatus = "model");
 public sealed record BacktestResultDto(
+    int MovingAveragePeriod,
     decimal StopLossPct,
     decimal TrailingDrawdownPct,
     decimal Leverage,
@@ -292,9 +295,34 @@ public sealed record BacktestResultDto(
     decimal GrossTotalReturn,
     decimal NetTotalReturn,
     decimal FeeCost);
-public sealed record StrategyParameterSetDto(decimal StopLossPct, decimal TrailingDrawdownPct, decimal Leverage = 3m);
+public sealed record RealtimeTradingSummaryDto(
+    string Status,
+    string? InstId,
+    string? Bar,
+    string? StrategyType,
+    string PositionSide,
+    decimal NetPnl,
+    decimal NetReturn,
+    decimal GrossPnl,
+    decimal Fee,
+    decimal FundingFee,
+    string? LastOrderId,
+    decimal? LastExecutionPrice,
+    long? LastExecutionTs,
+    string ReconciliationStatus);
+public sealed record StrategyParameterSetDto(int MovingAveragePeriod, decimal StopLossPct, decimal TrailingDrawdownPct, decimal Leverage = 3m);
 public sealed record StrategyParameterDto(string Id, string Label, string Description, decimal Value, string Unit);
-public sealed record StrategyDefinitionDto(string Id, string Name, string Description, string Status, bool SupportsBacktest, bool SupportsRealtime, StrategyParameterSetDto DefaultParams, List<StrategyParameterDto> Parameters);
+public sealed record StrategyDefinitionDto(
+    string Id,
+    string Name,
+    string Description,
+    string Status,
+    bool SupportsBacktest,
+    bool SupportsRealtime,
+    bool SupportsSimulation,
+    bool SupportsLive,
+    StrategyParameterSetDto DefaultParams,
+    List<StrategyParameterDto> Parameters);
 public sealed record InstrumentSuggestionDto(string InstId, string BaseCcy, string QuoteCcy, string InstType, string State);
 public sealed record RealtimeSessionDto(
     string SessionId,
@@ -355,7 +383,9 @@ public sealed record RealtimeLiveSessionDto(
     string ReconciliationStatus,
     string? ErrorCode,
     string? ErrorMessage,
-    BacktestResultDto? Summary,
+    RealtimeTradingSummaryDto? Summary,
+    BacktestResultDto? ModelSummary,
+    RealtimeTradingSummaryDto? TradingSummary,
     List<BacktestTradePointDto> TradePoints,
     List<RealtimePeriodEvaluationDto> PeriodEvaluations,
     BacktestTradePointDto? LastTrade,
@@ -386,6 +416,7 @@ public sealed record RealtimePeriodEvaluationDto(
     string ReconciliationStatus = "model");
 public sealed record RealtimeSimulationDto(
     BacktestResultDto? Summary,
+    RealtimeTradingSummaryDto? TradingSummary,
     List<CandlePointDto> Candles,
     List<BacktestTradePointDto> TradePoints,
     StrategyParameterSetDto StrategyParams,
@@ -452,6 +483,7 @@ public sealed record AppStateDto(
     decimal DailyPnl,
     decimal DrawdownPct,
     string StrategyStatus,
+    RealtimeTradingSummaryDto? LiveTradingSummary,
     string CurrencyMode,
     List<BalanceDetailDto> BalanceDetails,
     List<OrderHistoryDto> OrderHistory,

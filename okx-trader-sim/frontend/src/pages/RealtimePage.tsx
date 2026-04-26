@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { CandleChart } from '../components/backtest/CandleChart';
 import { StrategyPicker } from '../components/backtest/StrategyPicker';
@@ -14,6 +14,15 @@ import type {
   StrategyType,
 } from '../types';
 import { formatNumber, formatPercent } from '../utils/format';
+import {
+  DEFAULT_STRATEGY_PARAMS,
+  DEFAULT_STRATEGY_TYPE,
+  findStrategyDefinition,
+  formatStrategyParams,
+  getLeveragedStopLossValidationMessage,
+  getStrategyName,
+  sameStrategyParams,
+} from '../utils/strategy';
 
 type AppContext = {
   state: AppState | null;
@@ -37,21 +46,6 @@ type CachedRealtimePageState = {
 
 const bars: BacktestBar[] = ['1m', '5m', '15m', '1H', '4H', '1D'];
 const cacheKey = 'okx-trader-sim:realtime-page-state';
-const fallbackParams: StrategyParameterSet = { stopLossPct: 1, trailingDrawdownPct: 2, leverage: 3 };
-const fallbackStrategy: StrategyDefinition = {
-  id: 'buy-sell',
-  name: '买入卖出策略',
-  description: '过去 20 个点的均值曲线向上开多，向下开空；止损优先，回撤按最大浮盈回吐比例判断。',
-  status: 'active',
-  supportsBacktest: true,
-  supportsRealtime: true,
-  defaultParams: fallbackParams,
-  parameters: [
-    { id: 'stopLossPct', label: '止损比例', description: '价格触及止损线后平仓。', value: 1, unit: '%' },
-    { id: 'trailingDrawdownPct', label: '浮盈回撤比例', description: '按开仓后最大浮盈的回吐比例触发平仓。', value: 2, unit: '%' },
-    { id: 'leverage', label: '杠杆', description: '收益和止损约束使用该杠杆。', value: 3, unit: 'x' },
-  ],
-};
 
 function actionLabel(action: string) {
   const map: Record<string, string> = {
@@ -72,10 +66,10 @@ function sideLabel(side?: PositionSide | string | null) {
 
 function paramsSourceLabel(source?: string) {
   if (source === 'backtest-best') return '最近回测最佳参数';
-  if (source === 'manual') return '手工修改参数';
+  if (source === 'manual') return '当前参数';
   if (source === 'module-default') return '策略模块默认参数';
   if (source === 'follow-simulation') return '跟随模拟参数';
-  if (source === 'live-manual') return '实盘独立参数';
+  if (source === 'live-manual') return '独立参数';
   if (source === 'auto-best') return '自动寻找最佳参数';
   if (source === 'live-auto-best') return '实盘自动寻找最佳参数';
   return source ?? '-';
@@ -84,16 +78,6 @@ function paramsSourceLabel(source?: string) {
 function displayTime(value?: string | number | null) {
   if (!value) return '-';
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
-}
-
-function validationMessage(params: StrategyParameterSet) {
-  return params.stopLossPct * params.leverage > 10 ? '止损比例 * 杠杆不能超过 10%。' : '';
-}
-
-function sameParams(left: StrategyParameterSet, right: StrategyParameterSet) {
-  return Math.abs(left.stopLossPct - right.stopLossPct) < 0.0001
-    && Math.abs(left.trailingDrawdownPct - right.trailingDrawdownPct) < 0.0001
-    && Math.abs(left.leverage - right.leverage) < 0.0001;
 }
 
 function readCachedPageState(): CachedRealtimePageState | null {
@@ -107,10 +91,10 @@ function readCachedPageState(): CachedRealtimePageState | null {
       query: parsed.query || parsed.instId,
       bar: parsed.bar,
       pendingStrategyType: parsed.pendingStrategyType,
-      paramDraft: parsed.paramDraft ?? fallbackParams,
+      paramDraft: parsed.paramDraft ?? DEFAULT_STRATEGY_PARAMS,
       paramsDirty: Boolean(parsed.paramsDirty),
       simAutoOptimize: Boolean(parsed.simAutoOptimize),
-      liveParamDraft: parsed.liveParamDraft ?? parsed.paramDraft ?? fallbackParams,
+      liveParamDraft: parsed.liveParamDraft ?? parsed.paramDraft ?? DEFAULT_STRATEGY_PARAMS,
       liveParamsDirty: Boolean(parsed.liveParamsDirty),
       liveAutoOptimize: Boolean(parsed.liveAutoOptimize),
     };
@@ -132,25 +116,30 @@ export function RealtimePage({ app }: { app: AppContext }) {
   const cached = useMemo(() => readCachedPageState(), []);
   const initialInstId = cached?.instId ?? state.backtest?.instId ?? 'RAVE-USDT-SWAP';
   const initialBar = cached?.bar ?? (state.backtest?.bar as BacktestBar | undefined) ?? '1m';
-  const initialStrategy = cached?.pendingStrategyType ?? state.strategyConfig.strategyType ?? state.backtest?.strategyType ?? 'buy-sell';
+  const initialStrategy = cached?.pendingStrategyType ?? state.strategyConfig.strategyType ?? state.backtest?.strategyType ?? DEFAULT_STRATEGY_TYPE;
 
   const [instId, setInstId] = useState(initialInstId);
   const [query, setQuery] = useState(cached?.query ?? initialInstId);
   const [bar, setBar] = useState<BacktestBar>(initialBar);
   const [pendingStrategyType, setPendingStrategyType] = useState<StrategyType>(initialStrategy);
-  const [strategies, setStrategies] = useState<StrategyDefinition[]>([fallbackStrategy]);
-  const [paramDraft, setParamDraft] = useState<StrategyParameterSet>(cached?.paramDraft ?? fallbackParams);
+  const [expandedStrategyType, setExpandedStrategyType] = useState<StrategyType | null>(null);
+  const [strategies, setStrategies] = useState<StrategyDefinition[]>([]);
+  const [paramDraft, setParamDraft] = useState<StrategyParameterSet>(cached?.paramDraft ?? DEFAULT_STRATEGY_PARAMS);
   const [paramsDirty, setParamsDirty] = useState(cached?.paramsDirty ?? false);
   const [simAutoOptimize, setSimAutoOptimize] = useState(cached?.simAutoOptimize ?? false);
-  const [liveParamDraft, setLiveParamDraft] = useState<StrategyParameterSet>(cached?.liveParamDraft ?? fallbackParams);
+  const [liveParamDraft, setLiveParamDraft] = useState<StrategyParameterSet>(cached?.liveParamDraft ?? DEFAULT_STRATEGY_PARAMS);
   const [liveParamsDirty, setLiveParamsDirty] = useState(cached?.liveParamsDirty ?? false);
   const [liveAutoOptimize, setLiveAutoOptimize] = useState(cached?.liveAutoOptimize ?? false);
+  const [strategyPanelCollapsed, setStrategyPanelCollapsed] = useState(false);
   const [suggestions, setSuggestions] = useState<InstrumentSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [marketPanelCollapsed, setMarketPanelCollapsed] = useState(false);
   const [workspace, setWorkspace] = useState<RealtimeWorkspace | null>(null);
   const [loading, setLoading] = useState(false);
   const [forcingSimulation, setForcingSimulation] = useState(false);
   const [forcingLive, setForcingLive] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [simulationPeriodPage, setSimulationPeriodPage] = useState(0);
   const { setError, setMessage } = app;
 
   useEffect(() => {
@@ -189,14 +178,15 @@ export function RealtimePage({ app }: { app: AppContext }) {
 
   useEffect(() => {
     api.getStrategies()
-      .then((items) => setStrategies(items.filter((item) => item.supportsRealtime || item.status === 'pending')))
+      .then((items) => setStrategies(items))
       .catch((err) => setError(err instanceof Error ? err.message : '加载策略列表失败'));
     loadWorkspace(initialInstId, initialBar, initialStrategy, Boolean(cached));
   }, []);
 
   useEffect(() => {
     const keyword = query.trim();
-    if (keyword.length < 2 || keyword === instId) {
+    if (!showSuggestions) return;
+    if (keyword.length < 1) {
       setSuggestions([]);
       return;
     }
@@ -207,10 +197,10 @@ export function RealtimePage({ app }: { app: AppContext }) {
         .then(setSuggestions)
         .catch((err) => setError(err instanceof Error ? err.message : '搜索 OKX 品种失败'))
         .finally(() => setSearching(false));
-    }, 350);
+    }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [query, instId]);
+  }, [query, showSuggestions, setError]);
 
   useEffect(() => {
     if (!workspace?.nextRefreshAt) return;
@@ -221,8 +211,13 @@ export function RealtimePage({ app }: { app: AppContext }) {
     return () => window.clearTimeout(timer);
   }, [workspace?.nextRefreshAt, instId, bar, pendingStrategyType]);
 
+  useEffect(() => {
+    setSimulationPeriodPage(0);
+  }, [instId, bar, pendingStrategyType, workspace?.confirmedSession?.sessionId, workspace?.confirmedSession?.startedAt]);
+
   async function selectInstrument(item: InstrumentSuggestion) {
     setSuggestions([]);
+    setShowSuggestions(false);
     setInstId(item.instId);
     setQuery(item.instId);
     await loadWorkspace(item.instId, bar, pendingStrategyType);
@@ -238,6 +233,12 @@ export function RealtimePage({ app }: { app: AppContext }) {
     if (!definition || definition.status !== 'active' || !definition.supportsRealtime) return;
     setPendingStrategyType(next);
     await loadWorkspace(instId, bar, next);
+  }
+
+  async function toggleStrategyDetails(next: StrategyType) {
+    const shouldExpand = expandedStrategyType !== next;
+    setExpandedStrategyType(shouldExpand ? next : null);
+    await previewStrategy(next);
   }
 
   function updateParam(key: keyof StrategyParameterSet, value: string) {
@@ -257,7 +258,7 @@ export function RealtimePage({ app }: { app: AppContext }) {
   }
 
   async function confirmSimulation() {
-    const invalid = validationMessage(paramDraft);
+    const invalid = getLeveragedStopLossValidationMessage(paramDraft);
     if (invalid) {
       setError(invalid);
       return;
@@ -268,6 +269,7 @@ export function RealtimePage({ app }: { app: AppContext }) {
         instId,
         bar,
         strategyType: pendingStrategyType,
+        movingAveragePeriod: paramDraft.movingAveragePeriod,
         stopLossPct: paramDraft.stopLossPct,
         trailingDrawdownPct: paramDraft.trailingDrawdownPct,
         leverage: paramDraft.leverage,
@@ -282,7 +284,7 @@ export function RealtimePage({ app }: { app: AppContext }) {
   }
 
   async function startLiveSession() {
-    const invalid = validationMessage(liveParamDraft);
+    const invalid = getLeveragedStopLossValidationMessage(liveParamDraft);
     if (invalid) {
       setError(invalid);
       return;
@@ -293,6 +295,7 @@ export function RealtimePage({ app }: { app: AppContext }) {
         instId,
         bar,
         strategyType: pendingStrategyType,
+        movingAveragePeriod: liveParamDraft.movingAveragePeriod,
         stopLossPct: liveParamDraft.stopLossPct,
         trailingDrawdownPct: liveParamDraft.trailingDrawdownPct,
         leverage: liveParamDraft.leverage,
@@ -304,10 +307,6 @@ export function RealtimePage({ app }: { app: AppContext }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : '启动实时交易失败');
     }
-  }
-
-  async function refreshNow() {
-    await loadWorkspace(instId, bar, pendingStrategyType, true);
   }
 
   async function forceExitSimulation() {
@@ -368,21 +367,26 @@ export function RealtimePage({ app }: { app: AppContext }) {
     }
   }
 
-  const selectedStrategy = strategies.find((item) => item.id === pendingStrategyType) ?? fallbackStrategy;
+  const selectedStrategy = findStrategyDefinition(strategies, pendingStrategyType);
   const simulation = workspace?.simulation;
   const live = workspace?.live;
   const liveSession = workspace?.liveSession;
+  const liveTradingSummary = liveSession?.tradingSummary ?? liveSession?.summary;
+  const liveModelSummary = liveSession?.modelSummary;
+  const simTradingSummary = simulation?.tradingSummary;
   const currentSession = workspace?.confirmedSession;
   const summary = simulation?.summary;
   const allPeriods = simulation?.periodEvaluations ?? [];
   const lastPeriod = allPeriods.length ? allPeriods[allPeriods.length - 1] : null;
   const allLivePeriods = liveSession?.periodEvaluations ?? [];
   const lastLivePeriod = allLivePeriods.length ? allLivePeriods[allLivePeriods.length - 1] : null;
-  const currentValidationMessage = validationMessage(paramDraft);
-  const liveValidationMessage = validationMessage(liveParamDraft);
-  const recentTrades = simulation?.tradePoints.slice(-10).reverse() ?? [];
+  const currentValidationMessage = getLeveragedStopLossValidationMessage(paramDraft);
+  const liveValidationMessage = getLeveragedStopLossValidationMessage(liveParamDraft);
   const recentLiveTrades = liveSession?.tradePoints.slice(-10).reverse() ?? [];
-  const recentPeriods = allPeriods.slice(-20).reverse();
+  const simulationPeriodRows = [...allPeriods].reverse();
+  const simulationPeriodPageCount = Math.max(1, Math.ceil(simulationPeriodRows.length / 10));
+  const boundedSimulationPeriodPage = Math.min(simulationPeriodPage, simulationPeriodPageCount - 1);
+  const recentPeriods = simulationPeriodRows.slice(boundedSimulationPeriodPage * 10, boundedSimulationPeriodPage * 10 + 10);
   const recentLivePeriods = allLivePeriods.slice(-20).reverse();
   const liveHasPosition = liveSession?.positionSide === 'long' || liveSession?.positionSide === 'short';
   const simHasPosition = currentSession?.positionSide === 'long' || currentSession?.positionSide === 'short';
@@ -391,208 +395,254 @@ export function RealtimePage({ app }: { app: AppContext }) {
   const simCloseCount = allPeriods.filter((period) => period.action === 'close' || period.action === 'force_close').length;
   const liveOpenCount = allLivePeriods.filter((period) => period.action === 'open_long' || period.action === 'open_short').length;
   const liveCloseCount = allLivePeriods.filter((period) => period.action === 'close' || period.action === 'force_close').length;
-  const sourceLabel = paramsDirty ? '手工修改参数' : paramsSourceLabel(workspace?.paramsSource);
-  const liveSourceLabel = liveParamsDirty || !sameParams(liveParamDraft, paramDraft) ? '实盘独立参数' : '跟随模拟参数';
+  const sourceLabel = paramsSourceLabel(currentSession?.paramsSource ?? workspace?.paramsSource);
+  const liveSourceLabel = liveParamsDirty || !sameStrategyParams(liveParamDraft, paramDraft) ? '独立参数' : '跟随模拟参数';
   const chartTrades = [...(simulation?.tradePoints ?? []), ...(liveSession?.tradePoints ?? [])];
-
-  const latestPeriodLabel = useMemo(() => {
-    if (!lastPeriod) return '等待下一根已收盘 K 线。';
-    return `${actionLabel(lastPeriod.action)} / ${lastPeriod.reason}`;
-  }, [lastPeriod]);
+  const simulationDisplayParams = currentSession?.params ?? workspace?.strategyParams ?? paramDraft;
+  const parameterDefinitions = selectedStrategy?.parameters ?? simulation?.parameterDefinitions ?? [];
+  const simulationDisplayParamsText = formatStrategyParams(parameterDefinitions, simulationDisplayParams);
+  const selectedStrategyName = getStrategyName(strategies, pendingStrategyType);
+  const simulationLatestAction = lastPeriod ? actionLabel(lastPeriod.action) : actionLabel(simulation?.lastSignal ?? 'hold');
+  const simulationCurrentEquity = lastPeriod?.equity ?? 1;
+  const simulationCurrentPositionReturn = simHasPosition ? lastPeriod?.unrealizedReturn ?? 0 : 0;
+  const simulationCurrentFloatingPnl = simHasPosition ? lastPeriod?.netPnl ?? 0 : 0;
 
   return (
     <div className="backtestFlow">
       <section className="panel wide">
         <div className="panelHeader">
-          <div>
-            <p className="eyebrow">1 行情与 K 线</p>
-            <h2>品种搜索与实时 K 线</h2>
+          <h2>行情与 K 线</h2>
+          {marketPanelCollapsed ? (
+            <div className="collapsedMarketSummary inline">
+              <div><span>OKX 合约品种</span><strong>{workspace?.instId ?? (query || '未加载')}</strong></div>
+              <div><span>时间间隔</span><strong>{bar}</strong></div>
+              <div><span>连接状态</span><strong>{searching ? '搜索中...' : live?.connectionStatus ?? '等待行情'}</strong></div>
+              <div><span>最新价</span><strong>{formatNumber(workspace?.latestPrice, 8)}</strong></div>
+            </div>
+          ) : null}
+          <div className="panelHeaderActions">
+            <button type="button" className="secondary" onClick={() => setMarketPanelCollapsed((value) => !value)}>
+              {marketPanelCollapsed ? '展开' : '折叠'}
+            </button>
           </div>
-          <strong>{workspace?.instId ?? '未加载'}</strong>
         </div>
 
-        <div className="formGrid">
-          <label>
-            OKX 合约品种
-            <input value={query} onChange={(event) => setQuery(event.target.value.toUpperCase())} placeholder="输入 BTC-USDT-SWAP" />
-          </label>
-          <label>
-            时间间隔
-            <select value={bar} onChange={(event) => changeBar(event.target.value as BacktestBar)} disabled={loading}>
-              {bars.map((item) => <option value={item} key={item}>{item}</option>)}
-            </select>
-          </label>
-          <label>
-            连接状态
-            <input value={searching ? '搜索中...' : live?.connectionStatus ?? '等待行情'} readOnly />
-          </label>
-          <label>
-            最新价
-            <input value={formatNumber(workspace?.latestPrice, 8)} readOnly />
-          </label>
-        </div>
+        {!marketPanelCollapsed ? (
+          <>
+            <div className="formGrid">
+              <label className="searchField">
+                OKX 合约品种
+                <input
+                  value={query}
+                  onFocus={() => setShowSuggestions(true)}
+                  onClick={() => setShowSuggestions(true)}
+                  onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
+                  onChange={(event) => {
+                    setQuery(event.target.value.toUpperCase());
+                    setShowSuggestions(true);
+                  }}
+                  placeholder="输入 BTC-USDT-SWAP"
+                />
+                {showSuggestions ? (
+                  suggestions.length ? (
+                    <div className="suggestionDropdown">
+                      {suggestions.map((item) => (
+                        <button
+                          type="button"
+                          className="suggestionItem"
+                          key={item.instId}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectInstrument(item)}
+                        >
+                          <strong>{item.instId}</strong>
+                          <span>{item.baseCcy}/{item.quoteCcy} / {item.state || 'unknown'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : query.trim().length >= 1 && !searching ? (
+                    <div className="suggestionDropdown">
+                      <div className="emptyState compact">请选择 OKX 返回的真实品种后再运行。</div>
+                    </div>
+                  ) : null
+                ) : null}
+              </label>
+              <label>
+                时间间隔
+                <select value={bar} onChange={(event) => changeBar(event.target.value as BacktestBar)} disabled={loading}>
+                  {bars.map((item) => <option value={item} key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label>
+                连接状态
+                <input value={searching ? '搜索中...' : live?.connectionStatus ?? '等待行情'} readOnly />
+              </label>
+              <label>
+                最新价
+                <input value={formatNumber(workspace?.latestPrice, 8)} readOnly />
+              </label>
+            </div>
 
-        {suggestions.length ? (
-          <div className="suggestionList">
-            {suggestions.map((item) => (
-              <button type="button" className="suggestionItem" key={item.instId} onClick={() => selectInstrument(item)}>
-                <strong>{item.instId}</strong>
-                <span>{item.baseCcy}/{item.quoteCcy} / {item.state || 'unknown'}</span>
-              </button>
-            ))}
-          </div>
-        ) : query.trim().length >= 2 && query !== instId && !searching ? (
-          <div className="emptyState compact">请选择 OKX 返回的真实品种后再运行。</div>
+            {workspace?.candles.length ? (
+              <CandleChart candles={workspace.candles} trades={chartTrades} />
+            ) : (
+              <EmptyState text={loading ? '正在加载 K 线...' : '选择 OKX 品种后显示实时 K 线。'} />
+            )}
+          </>
         ) : null}
-
-        <div className="actions">
-          <button type="button" onClick={refreshNow} disabled={loading}>{loading ? '刷新中...' : '立即刷新'}</button>
-          <button type="button" className="secondary" disabled>{workspace?.nextRefreshAt ? `下次刷新 ${displayTime(workspace.nextRefreshAt)}` : '等待刷新时间'}</button>
-        </div>
-
-        {workspace?.candles.length ? (
-          <CandleChart candles={workspace.candles} trades={chartTrades} />
-        ) : (
-          <EmptyState text={loading ? '正在加载 K 线...' : '选择 OKX 品种后显示实时 K 线。'} />
-        )}
       </section>
 
       <section className="panel wide">
         <div className="panelHeader">
-          <div>
-            <p className="eyebrow">2 策略运行</p>
-            <h2>实时模拟与实时交易并行</h2>
+          <h2>策略库</h2>
+          <strong>{selectedStrategyName}</strong>
+          <div className="panelHeaderActions">
+            <button type="button" className="secondary" onClick={() => setStrategyPanelCollapsed((value) => !value)}>
+              {strategyPanelCollapsed ? '展开' : '折叠'}
+            </button>
           </div>
-          <strong>{selectedStrategy.name}</strong>
         </div>
 
-        <StrategyPicker strategies={strategies} selected={pendingStrategyType} mode="realtime" disabled={loading} onSelect={previewStrategy} />
+        <StrategyPicker
+          strategies={strategies}
+          selected={pendingStrategyType}
+          expanded={strategyPanelCollapsed ? null : expandedStrategyType}
+          mode="realtime"
+          disabled={loading}
+          onSelect={toggleStrategyDetails}
+        />
+
+        {!strategyPanelCollapsed && expandedStrategyType === pendingStrategyType ? (
+          <div className="analysisBlock compactHeader">
+            <h2>策略参数</h2>
+            <div className="formGrid parameterInlineRow">
+              <label>
+                均线周期
+                <input type="number" min="2" step="1" value={paramDraft.movingAveragePeriod} onChange={(event) => updateParam('movingAveragePeriod', event.target.value)} />
+              </label>
+              <label>
+                止损 %
+                <input type="number" min="0.01" step="0.01" value={paramDraft.stopLossPct} onChange={(event) => updateParam('stopLossPct', event.target.value)} />
+              </label>
+              <label>
+                回撤 %
+                <input type="number" min="0.01" step="0.01" value={paramDraft.trailingDrawdownPct} onChange={(event) => updateParam('trailingDrawdownPct', event.target.value)} />
+              </label>
+              <label>
+                杠杆 x
+                <input type="number" min="1" step="1" value={paramDraft.leverage} onChange={(event) => updateParam('leverage', event.target.value)} />
+              </label>
+              <label>
+                自动寻优
+                <select value={simAutoOptimize ? 'on' : 'off'} onChange={(event) => setSimAutoOptimize(event.target.value === 'on')}>
+                  <option value="off">关闭</option>
+                  <option value="on">开启</option>
+                </select>
+              </label>
+            </div>
+            {currentValidationMessage ? <div className="statusBanner error">{currentValidationMessage}</div> : null}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="panel wide">
+        <div className="panelHeader">
+          <h2>实时模拟</h2>
+          <strong>{selectedStrategyName}</strong>
+        </div>
 
         <div className="analysisBlock compactHeader">
-          <p className="eyebrow">实时模拟参数</p>
-          <h2>{sourceLabel}</h2>
-          <div className="formGrid">
-            <label>
-              止损比例 %
-              <input type="number" min="0.01" step="0.01" value={paramDraft.stopLossPct} onChange={(event) => updateParam('stopLossPct', event.target.value)} />
-            </label>
-            <label>
-              回撤比例 %
-              <input type="number" min="0.01" step="0.01" value={paramDraft.trailingDrawdownPct} onChange={(event) => updateParam('trailingDrawdownPct', event.target.value)} />
-            </label>
-            <label>
-              杠杆 x
-              <input type="number" min="1" step="1" value={paramDraft.leverage} onChange={(event) => updateParam('leverage', event.target.value)} />
-            </label>
-            <label>
-              自动寻找最佳参数
-              <select value={simAutoOptimize ? 'on' : 'off'} onChange={(event) => setSimAutoOptimize(event.target.value === 'on')}>
-                <option value="off">关闭</option>
-                <option value="on">开启：开仓前自动优化</option>
-              </select>
-            </label>
-            <label>
-              最近动作
-              <input value={simulation ? actionLabel(simulation.lastSignal) : '观望'} readOnly />
-            </label>
-          </div>
-          {currentValidationMessage ? <div className="statusBanner error">{currentValidationMessage}</div> : null}
           <div className="actions">
-            <button type="button" className={simAutoOptimize ? undefined : 'secondary'} onClick={() => setSimAutoOptimize((value) => !value)}>
-              {simAutoOptimize ? '实时模拟自动优化：开启' : '实时模拟自动优化：关闭'}
-            </button>
             <button type="button" onClick={confirmSimulation} disabled={loading || Boolean(currentValidationMessage)}>
               启动实时模拟
             </button>
-            <button type="button" className="secondary" onClick={refreshNow} disabled={loading}>
-              刷新
+            <button type="button" className="secondary" onClick={forceExitSimulation} disabled={!currentSession || loading || forcingSimulation}>
+              {forcingSimulation ? '模拟退出中...' : '强制退出模拟'}
             </button>
           </div>
         </div>
 
-        <div className="resultSummaryStrip compactHeader">
+        <div className="resultSummaryStrip fiveCol compactHeader">
           <div><span>模拟状态</span><strong>{currentSession?.status ?? '未确认'}</strong></div>
-          <div><span>模拟持仓</span><strong>{sideLabel(currentSession?.positionSide)}</strong></div>
-          <div><span>入场价</span><strong>{formatNumber(currentSession?.entryPrice, 8)}</strong></div>
-          <div><span>入场时间</span><strong>{displayTime(currentSession?.entryTs)}</strong></div>
-          <div><span>最近结算</span><strong>{displayTime(currentSession?.lastSettledCandleTs)}</strong></div>
-          <div><span>最近动作</span><strong>{lastPeriod ? actionLabel(lastPeriod.action) : actionLabel(simulation?.lastSignal ?? 'hold')}</strong></div>
-          <div><span>自动优化</span><strong>{currentSession?.autoOptimizeParameters ? '已开启' : '关闭'}</strong></div>
-          <div><span>最近优化</span><strong>{currentSession?.lastOptimizationResult ? `${currentSession.lastOptimizationResult.stopLossPct}% / ${currentSession.lastOptimizationResult.trailingDrawdownPct}% / ${currentSession.lastOptimizationResult.leverage}x` : '-'}</strong></div>
-        </div>
-
-        <div className="resultSummaryStrip">
-          <div><span>含浮盈累计收益</span><strong className={(summary?.netTotalReturn ?? 0) >= 0 ? 'good' : 'bad'}>{formatPercent(summary?.netTotalReturn ?? 0)}</strong></div>
-          <div><span>已实现收益</span><strong className={(simulation?.realizedReturn ?? 0) >= 0 ? 'good' : 'bad'}>{formatPercent(simulation?.realizedReturn ?? 0)}</strong></div>
-          <div><span>当前浮盈</span><strong className={(simulation?.unrealizedReturn ?? 0) >= 0 ? 'good' : 'bad'}>{formatPercent(simulation?.unrealizedReturn ?? 0)}</strong></div>
-          <div><span>权益值</span><strong>{formatNumber(lastPeriod?.equity ?? 1, 6)}</strong></div>
-          <div><span>最大回撤</span><strong className="bad">{formatPercent(summary?.maxDrawdown ?? 0)}</strong></div>
+          <div><span>开仓 / 平仓次数</span><strong>{simOpenCount} / {simCloseCount}</strong></div>
           <div><span>胜率</span><strong>{formatPercent(summary?.winRate ?? 0)}</strong></div>
-          <div><span>费率成本</span><strong>{formatPercent(summary?.feeCost ?? 0)}</strong></div>
-          <div><span>开仓点</span><strong>{simulation?.buyPoints ?? 0}</strong></div>
-          <div><span>平仓点</span><strong>{simulation?.sellPoints ?? 0}</strong></div>
-        </div>
-
-        <div className="resultSummaryStrip">
-          <div><span>模拟买入/开仓次数</span><strong>{simOpenCount}</strong></div>
-          <div><span>模拟卖出/平仓次数</span><strong>{simCloseCount}</strong></div>
-        </div>
-
-        <div className="actions">
-          <button type="button" className="secondary" onClick={forceExitSimulation} disabled={!currentSession || loading || forcingSimulation}>
-            {forcingSimulation ? '模拟退出中...' : '强制退出模拟'}
-          </button>
-          <button type="button" className="secondary" disabled>{latestPeriodLabel}</button>
-          <button type="button" className="secondary" disabled>{simulation?.signalReason ?? '等待策略确认。'}</button>
+          <div><span>最大回撤</span><strong className="bad">{formatPercent(summary?.maxDrawdown ?? 0)}</strong></div>
+          <div><span>模拟总收益率</span><strong className={(simTradingSummary?.netReturn ?? 0) >= 0 ? 'good' : 'bad'}>{formatPercent(simTradingSummary?.netReturn ?? 0)}</strong></div>
+          <div><span>模拟持仓</span><strong>{sideLabel(currentSession?.positionSide)}</strong></div>
+          <div><span>持仓权益</span><strong>{formatNumber(simulationCurrentEquity, 6)}</strong></div>
+          <div><span>当前持仓收益</span><strong className={simulationCurrentPositionReturn >= 0 ? 'good' : 'bad'}>{formatPercent(simulationCurrentPositionReturn)}</strong></div>
+          <div><span>当前浮盈</span><strong className={simulationCurrentFloatingPnl >= 0 ? 'good' : 'bad'}>{formatNumber(simulationCurrentFloatingPnl, 6)}</strong></div>
+          <div><span>最近动作</span><strong>{simulationLatestAction}</strong></div>
         </div>
 
         <div className="compactHeader">
-          <p className="eyebrow">每周期动作</p>
-          <h2>周期动作与资金状态</h2>
+          <h2>周期动作记录</h2>
           {recentPeriods.length ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>动作</th>
-                  <th>结算价</th>
-                  <th>执行价</th>
-                  <th>持仓</th>
-                  <th>周期收益</th>
-                  <th>已实现</th>
-                  <th>浮盈</th>
-                  <th>累计</th>
-                  <th>费率</th>
-                  <th>原因</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentPeriods.map((period) => (
-                  <tr key={`${period.ts}-${period.action}-${period.close}`}>
-                    <td>{displayTime(period.ts)}</td>
-                    <td>{actionLabel(period.action)}</td>
-                    <td>{formatNumber(period.close, 8)}</td>
-                    <td>{formatNumber(period.executionPrice, 8)}</td>
-                    <td>{sideLabel(period.positionSide)}</td>
-                    <td className={period.periodReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.periodReturn)}</td>
-                    <td className={period.realizedReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.realizedReturn)}</td>
-                    <td className={period.unrealizedReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.unrealizedReturn)}</td>
-                    <td className={period.totalReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.totalReturn)}</td>
-                    <td>{formatPercent(period.feeCost)}</td>
-                    <td>{period.reason}</td>
+            <>
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>动作</th>
+                    <th>结算价</th>
+                    <th>执行价</th>
+                    <th>持仓</th>
+                    <th>周期收益</th>
+                    <th>已实现收益</th>
+                    <th>浮盈</th>
+                    <th>累计收益</th>
+                    <th>净PNL</th>
+                    <th>手续费</th>
+                    <th>原因</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recentPeriods.map((period) => (
+                    <tr key={[period.ts, period.action, period.close].join('-')}>
+                      <td>{displayTime(period.ts)}</td>
+                      <td>{actionLabel(period.action)}</td>
+                      <td>{formatNumber(period.close, 8)}</td>
+                      <td>{formatNumber(period.executionPrice, 8)}</td>
+                      <td>{sideLabel(period.positionSide)}</td>
+                      <td className={period.periodReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.periodReturn)}</td>
+                      <td className={period.realizedReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.realizedReturn)}</td>
+                      <td className={period.unrealizedReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.unrealizedReturn)}</td>
+                      <td className={period.totalReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.totalReturn)}</td>
+                      <td className={(period.netPnl ?? 0) >= 0 ? 'good' : 'bad'}>{formatNumber(period.netPnl, 6)}</td>
+                      <td>{formatNumber(period.fee, 6)}</td>
+                      <td>{period.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="paginationRow">
+                <button type="button" className="secondary" onClick={() => setSimulationPeriodPage((page) => Math.max(0, page - 1))} disabled={boundedSimulationPeriodPage === 0}>
+                  上一页
+                </button>
+                <span>{boundedSimulationPeriodPage + 1} / {simulationPeriodPageCount}</span>
+                <button type="button" className="secondary" onClick={() => setSimulationPeriodPage((page) => Math.min(simulationPeriodPageCount - 1, page + 1))} disabled={boundedSimulationPeriodPage >= simulationPeriodPageCount - 1}>
+                  下一页
+                </button>
+              </div>
+            </>
           ) : (
-            <EmptyState text="启动实时模拟后，每根已收盘 K 线都会生成周期动作记录。" />
+            <EmptyState text="暂无周期动作记录。" />
           )}
         </div>
 
+      </section>
+
+      <section className="panel wide">
+        <div className="panelHeader">
+          <h2>实时交易</h2>
+          <strong>{selectedStrategyName}</strong>
+        </div>
+
         <div className="analysisBlock compactHeader">
-          <p className="eyebrow">实时交易参数</p>
-          <h2>{liveSourceLabel}</h2>
           <div className="formGrid">
+            <label>
+              实盘均线周期
+              <input type="number" min="2" step="1" value={liveParamDraft.movingAveragePeriod} onChange={(event) => updateLiveParam('movingAveragePeriod', event.target.value)} />
+            </label>
             <label>
               实盘止损比例 %
               <input type="number" min="0.01" step="0.01" value={liveParamDraft.stopLossPct} onChange={(event) => updateLiveParam('stopLossPct', event.target.value)} />
@@ -645,7 +695,7 @@ export function RealtimePage({ app }: { app: AppContext }) {
 
         <div className="resultSummaryStrip">
           <div><span>OKX taker费率</span><strong>{formatPercent(liveSession?.lastTakerFeeRate ?? 0.0005)}</strong></div>
-          <div><span>成交核对</span><strong>{liveSession?.reconciliationStatus ?? '-'}</strong></div>
+          <div><span>成交核对</span><strong>{liveTradingSummary?.reconciliationStatus ?? liveSession?.reconciliationStatus ?? '-'}</strong></div>
           <div><span>本次使用资金</span><strong>{formatNumber(liveSession?.allocatedCapital, 4)}</strong></div>
           <div><span>开仓张数</span><strong>{formatNumber(liveSession?.positionSize, 8)}</strong></div>
           <div><span>名义价值</span><strong>{formatNumber(liveSession?.entryNotionalUsd, 4)}</strong></div>
@@ -653,13 +703,13 @@ export function RealtimePage({ app }: { app: AppContext }) {
         </div>
 
         <div className="resultSummaryStrip">
-          <div><span>实盘含浮盈累计收益</span><strong className={(liveSession?.summary?.netTotalReturn ?? 0) >= 0 ? 'good' : 'bad'}>{formatPercent(liveSession?.summary?.netTotalReturn ?? 0)}</strong></div>
+          <div><span>实盘含浮盈累计收益</span><strong className={(liveTradingSummary?.netReturn ?? 0) >= 0 ? 'good' : 'bad'}>{formatPercent(liveTradingSummary?.netReturn ?? 0)}</strong></div>
           <div><span>实盘已实现收益</span><strong className={(lastLivePeriod?.realizedReturn ?? 0) >= 0 ? 'good' : 'bad'}>{formatPercent(lastLivePeriod?.realizedReturn ?? 0)}</strong></div>
           <div><span>实盘当前浮盈</span><strong className={liveCurrentUnrealizedReturn >= 0 ? 'good' : 'bad'}>{formatPercent(liveCurrentUnrealizedReturn)}</strong></div>
           <div><span>实盘权益值</span><strong>{formatNumber(lastLivePeriod?.equity ?? 1, 6)}</strong></div>
-          <div><span>实盘最大回撤</span><strong className="bad">{formatPercent(liveSession?.summary?.maxDrawdown ?? 0)}</strong></div>
-          <div><span>实盘胜率</span><strong>{formatPercent(liveSession?.summary?.winRate ?? 0)}</strong></div>
-          <div><span>实盘费率成本</span><strong>{formatPercent(liveSession?.summary?.feeCost ?? 0)}</strong></div>
+          <div><span>实盘最大回撤</span><strong className="bad">{formatPercent(liveModelSummary?.maxDrawdown ?? 0)}</strong></div>
+          <div><span>实盘胜率</span><strong>{formatPercent(liveModelSummary?.winRate ?? 0)}</strong></div>
+          <div><span>实盘费率成本</span><strong>{formatNumber(liveTradingSummary?.fee ?? 0, 6)}</strong></div>
           <div><span>实盘买入/开仓次数</span><strong>{liveOpenCount}</strong></div>
           <div><span>实盘卖出/平仓次数</span><strong>{liveCloseCount}</strong></div>
         </div>
@@ -686,7 +736,7 @@ export function RealtimePage({ app }: { app: AppContext }) {
               </thead>
               <tbody>
                 {recentLivePeriods.map((period) => (
-                  <tr key={`live-${period.ts}-${period.action}-${period.close}`}>
+                  <tr key={['live', period.ts, period.action, period.close].join('-')}>
                     <td>{displayTime(period.ts)}</td>
                     <td>{actionLabel(period.action)}</td>
                     <td>{formatNumber(period.close, 8)}</td>
@@ -696,7 +746,7 @@ export function RealtimePage({ app }: { app: AppContext }) {
                     <td className={period.realizedReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.realizedReturn)}</td>
                     <td className={period.unrealizedReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.unrealizedReturn)}</td>
                     <td className={period.totalReturn >= 0 ? 'good' : 'bad'}>{formatPercent(period.totalReturn)}</td>
-                    <td>{formatPercent(period.feeCost)}</td>
+                    <td>{formatNumber(period.fee, 6)}</td>
                     <td>{period.reason}</td>
                   </tr>
                 ))}
@@ -720,45 +770,6 @@ export function RealtimePage({ app }: { app: AppContext }) {
           <button type="button" className="secondary" onClick={deleteLive} disabled={loading || !liveSession}>
             删除实盘会话
           </button>
-        </div>
-
-        <div className="compactHeader">
-          <p className="eyebrow">最近模拟交易</p>
-          <h2>模拟交易记录</h2>
-          {recentTrades.length ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>方向</th>
-                  <th>开仓时间</th>
-                  <th>开仓价</th>
-                  <th>平仓时间</th>
-                  <th>平仓价</th>
-                  <th>净收益率</th>
-                  <th>净PNL</th>
-                  <th>费率</th>
-                  <th>原因</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentTrades.map((trade) => (
-                  <tr key={`${trade.entryTs}-${trade.exitTs}`}>
-                    <td>{sideLabel(trade.side)}</td>
-                    <td>{displayTime(trade.entryTs)}</td>
-                    <td>{formatNumber(trade.entryPrice, 8)}</td>
-                    <td>{displayTime(trade.exitTs)}</td>
-                    <td>{formatNumber(trade.exitPrice, 8)}</td>
-                    <td className={(trade.netReturn ?? trade.netRet ?? trade.ret) >= 0 ? 'good' : 'bad'}>{formatPercent(trade.netReturn ?? trade.netRet ?? trade.ret)}</td>
-                    <td className={(trade.netPnl ?? 0) >= 0 ? 'good' : 'bad'}>{formatNumber(trade.netPnl, 6)}</td>
-                    <td>{formatPercent(trade.feeCost ?? 0)}</td>
-                    <td>{trade.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <EmptyState text={recentPeriods.length ? '当前还没有完成的模拟开平仓交易；请查看上方周期动作记录。' : '当前还没有完成的模拟交易记录。'} />
-          )}
         </div>
 
         <div className="compactHeader">

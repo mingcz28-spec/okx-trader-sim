@@ -4,6 +4,7 @@ import { formatPercent } from '../../utils/format';
 type BacktestParameterPanelProps = {
   instId: string;
   bar: BacktestBar;
+  movingAveragePeriod: number;
   stopLossPct: number;
   trailingDrawdownPct: number;
   leverage: number;
@@ -15,6 +16,7 @@ type BacktestParameterPanelProps = {
   canRun: boolean;
   validationMessage?: string | null;
   onBarChange: (bar: BacktestBar) => void;
+  onMovingAveragePeriodChange: (value: number) => void;
   onStopLossChange: (value: number) => void;
   onTrailingChange: (value: number) => void;
   onLeverageChange: (value: number) => void;
@@ -27,6 +29,7 @@ type BacktestParameterPanelProps = {
 export function BacktestParameterPanel({
   instId,
   bar,
+  movingAveragePeriod,
   stopLossPct,
   trailingDrawdownPct,
   leverage,
@@ -38,6 +41,7 @@ export function BacktestParameterPanel({
   canRun,
   validationMessage,
   onBarChange,
+  onMovingAveragePeriodChange,
   onStopLossChange,
   onTrailingChange,
   onLeverageChange,
@@ -54,7 +58,7 @@ export function BacktestParameterPanel({
         <div>
           <p className="eyebrow">2 参数配置</p>
           <h2>最优参数与候选组合</h2>
-          <p className="bodyCopy">回测收益按杠杆和双边 taker 费率计算，候选参数会自动过滤掉止损乘杠杆超过 10% 的组合。</p>
+          <p className="bodyCopy">回测收益按杠杆和双边 taker 费率计算；自动寻优按均线周期、止损收益、浮盈回撤和杠杆做网格搜索，目标函数是净收益最高。</p>
         </div>
         <strong>{busy ? '计算中' : bestResult ? '已找到最优参数' : '等待回测'}</strong>
       </div>
@@ -74,7 +78,8 @@ export function BacktestParameterPanel({
                 <option value="1D">1D</option>
               </select>
             </label>
-            <label>止损 %<input type="number" min="0.01" step="0.01" value={stopLossPct} onChange={(e) => onStopLossChange(Number(e.target.value))} /></label>
+            <label>买入均线周期<input type="number" min="2" step="1" value={movingAveragePeriod} onChange={(e) => onMovingAveragePeriodChange(Number(e.target.value))} /></label>
+            <label>止损收益 %<input type="number" min="0.01" step="0.01" value={stopLossPct} onChange={(e) => onStopLossChange(Number(e.target.value))} /></label>
             <label>浮盈回撤 %<input type="number" min="0.01" step="0.01" value={trailingDrawdownPct} onChange={(e) => onTrailingChange(Number(e.target.value))} /></label>
             <label>杠杆 x<input type="number" min="1" step="1" value={leverage} onChange={(e) => onLeverageChange(Number(e.target.value))} /></label>
           </div>
@@ -92,6 +97,7 @@ export function BacktestParameterPanel({
           <p className="eyebrow">自动选出的最优参数</p>
           {bestResult ? (
             <div className="metricMiniGrid">
+              <div><span>均线周期</span><strong>{bestResult.movingAveragePeriod}</strong></div>
               <div><span>止损</span><strong>{bestResult.stopLossPct}%</strong></div>
               <div><span>浮盈回撤</span><strong>{bestResult.trailingDrawdownPct}%</strong></div>
               <div><span>杠杆</span><strong>{bestResult.leverage}x</strong></div>
@@ -115,14 +121,16 @@ export function BacktestParameterPanel({
         </div>
         {candidates.length ? (
           <table>
-            <thead><tr><th>止损</th><th>回撤</th><th>杠杆</th><th>交易数</th><th>胜率</th><th>净收益</th><th>费率</th><th>最大回撤</th><th></th></tr></thead>
+            <thead><tr><th>均线周期</th><th>止损</th><th>回撤</th><th>杠杆</th><th>交易数</th><th>胜率</th><th>净收益</th><th>费率</th><th>最大回撤</th><th></th></tr></thead>
             <tbody>
               {candidates.slice(0, 12).map((result) => {
-                const active = selected?.stopLossPct === result.stopLossPct
+                const active = selected?.movingAveragePeriod === result.movingAveragePeriod
+                  && selected?.stopLossPct === result.stopLossPct
                   && selected?.trailingDrawdownPct === result.trailingDrawdownPct
                   && selected?.leverage === result.leverage;
                 return (
-                  <tr key={`${result.stopLossPct}-${result.trailingDrawdownPct}-${result.leverage}`} className={active ? 'selectedRow' : ''}>
+                  <tr key={`${result.movingAveragePeriod}-${result.stopLossPct}-${result.trailingDrawdownPct}-${result.leverage}`} className={active ? 'selectedRow' : ''}>
+                    <td>{result.movingAveragePeriod}</td>
                     <td>{result.stopLossPct}%</td>
                     <td>{result.trailingDrawdownPct}%</td>
                     <td>{result.leverage}x</td>

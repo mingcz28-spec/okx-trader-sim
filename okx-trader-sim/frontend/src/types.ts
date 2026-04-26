@@ -19,6 +19,7 @@ export type StrategyConfig = {
   strategyType: StrategyType;
   enabled: boolean;
   entrySide: 'buy';
+  movingAveragePeriod: number;
   stopLossPct: number;
   trailingDrawdownPct: number;
   leverage: number;
@@ -68,6 +69,7 @@ export type OrderHistoryItem = {
 };
 
 export type BacktestResult = {
+  movingAveragePeriod: number;
   stopLossPct: number;
   trailingDrawdownPct: number;
   leverage: number;
@@ -78,6 +80,23 @@ export type BacktestResult = {
   grossTotalReturn: number;
   netTotalReturn: number;
   feeCost: number;
+};
+
+export type RealtimeTradingSummary = {
+  status: string;
+  instId?: string | null;
+  bar?: string | null;
+  strategyType?: StrategyType | string | null;
+  positionSide: PositionSide;
+  netPnl: number;
+  netReturn: number;
+  grossPnl: number;
+  fee: number;
+  fundingFee: number;
+  lastOrderId?: string | null;
+  lastExecutionPrice?: number | null;
+  lastExecutionTs?: number | null;
+  reconciliationStatus: string;
 };
 
 export type CandlePoint = {
@@ -150,6 +169,7 @@ export type BacktestSummary = {
 };
 
 export type StrategyParameterSet = {
+  movingAveragePeriod: number;
   stopLossPct: number;
   trailingDrawdownPct: number;
   leverage: number;
@@ -167,6 +187,7 @@ export type ConfirmRealtimeSessionPayload = {
   instId: string;
   bar: BacktestBar;
   strategyType: StrategyType;
+  movingAveragePeriod: number;
   stopLossPct: number;
   trailingDrawdownPct: number;
   leverage: number;
@@ -182,6 +203,8 @@ export type StrategyDefinition = {
   status: 'active' | 'pending';
   supportsBacktest: boolean;
   supportsRealtime: boolean;
+  supportsSimulation: boolean;
+  supportsLive: boolean;
   defaultParams: StrategyParameterSet;
   parameters: StrategyParameter[];
 };
@@ -192,29 +215,6 @@ export type InstrumentSuggestion = {
   quoteCcy: string;
   instType: string;
   state: string;
-};
-
-export type RealtimeConsole = {
-  strategyType: StrategyType;
-  strategyName: string;
-  strategyStatusLabel: string;
-  strategyStatus: 'idle' | 'running' | 'paused';
-  enabled: boolean;
-  symbol: string;
-  lastPrice?: number | null;
-  candleCount: number;
-  hasPosition: boolean;
-  entryPrice?: number | null;
-  lastSignal: RealtimeAction | string;
-  stopLossPct: number;
-  trailingDrawdownPct: number;
-  leverage: number;
-  riskState: string;
-  executionAdvice: string;
-  positionCount: number;
-  marketNote?: string | null;
-  updatedAt: string;
-  logs: string[];
 };
 
 export type RealtimeSession = {
@@ -281,7 +281,9 @@ export type RealtimeLiveSession = {
   reconciliationStatus: string;
   errorCode?: string | null;
   errorMessage?: string | null;
-  summary?: BacktestResult | null;
+  summary?: RealtimeTradingSummary | null;
+  modelSummary?: BacktestResult | null;
+  tradingSummary?: RealtimeTradingSummary | null;
   tradePoints: BacktestTradePoint[];
   periodEvaluations: RealtimePeriodEvaluation[];
   lastTrade?: BacktestTradePoint | null;
@@ -316,6 +318,7 @@ export type RealtimePeriodEvaluation = {
 
 export type RealtimeSimulation = {
   summary?: BacktestResult | null;
+  tradingSummary?: RealtimeTradingSummary | null;
   candles: CandlePoint[];
   tradePoints: BacktestTradePoint[];
   strategyParams: StrategyParameterSet;
@@ -386,6 +389,7 @@ export type AppState = {
   dailyPnl: number;
   drawdownPct: number;
   strategyStatus: 'idle' | 'running' | 'paused';
+  liveTradingSummary?: RealtimeTradingSummary | null;
   currencyMode: 'USD' | 'CAD';
   balanceDetails: BalanceDetail[];
   orderHistory: OrderHistoryItem[];

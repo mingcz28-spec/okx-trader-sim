@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-16T21:02:51.794Z",
+  "entries": {
+    "memory:memory/2026-04-15.md:1:9": {
+      "key": "memory:memory/2026-04-15.md:1:9",
+      "path": "memory/2026-04-15.md",
+      "startLine": 1,
+      "endLine": 9,
+      "source": "memory",
+      "snippet": "- Continued main work on okx-trader-sim M狙击手 after compaction. - Confirmed user wants autonomous ongoing optimization without asking each step, and wants progress updates only when there is substantive progress. - Implemented trend-following strategy as the second real backtestable strategy path after buy-sell. - Raised product/version target to v0.3.5 for the trend-following backtest integration. - Work included adding strategyType support through backtest flow and planning to keep mean-reversion and breakout as placeholders until truly implemented. - Local Next build completed successfully for the trend-following iteration. - Railway deployment attempt hit a request/network error after bui",
+      "recallCount": 4,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.48574580682020513,
+      "maxScore": 0.4857420975227753,
+      "firstRecalledAt": "2026-04-15T21:31:29.966Z",
+      "lastRecalledAt": "2026-04-16T21:02:51.794Z",
+      "queryHashes": [
+        "584e4b6cc2f5",
+        "82ff941c9794",
+        "c3fb550af49e",
+        "1a5cebab2960"
+      ],
+      "recallDays": [
+        "2026-04-15",
+        "2026-04-16"
+      ],
+      "conceptTags": [
+        "network",
+        "okx-trader-sim",
+        "trend-following",
+        "buy-sell",
+        "product/version",
+        "v0.3.5",
+        "mean-reversion",
+        "request/network"
+      ]
+    },
+    "memory:memory/2026-04-14.md:1:8": {
+      "key": "memory:memory/2026-04-14.md:1:8",
+      "path": "memory/2026-04-14.md",
+      "startLine": 1,
+      "endLine": 8,
+      "source": "memory",
+      "snippet": "- `洞察贾维斯 v0.1` direction clarified by user: three core modes are (1) information collection across industry, competitors, customers, academics to form fast news briefs, (2) deep insight reports for a specific product with detailed technical comparison and insight, and (3) topic tracking for continuous follow-up on a theme. - First version focus for `洞察贾维斯`: industry information. - Planned input sources for v0.1: broad intake across text/URL/files/OKX-like data/chat sources/local knowledge base, with special emphasis on user-uploaded knowledge base content. - Planned outputs for v0.1: conclusions and reports. - Desired product role/persona for `洞察贾维斯`: more like the user's second brain. - Use",
+      "recallCount": 4,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.000005878896538111625,
+      "maxScore": 0.0000018355121607921282,
+      "firstRecalledAt": "2026-04-15T21:31:29.966Z",
+      "lastRecalledAt": "2026-04-16T21:02:51.794Z",
+      "queryHashes": [
+        "584e4b6cc2f5",
+        "82ff941c9794",
+        "c3fb550af49e",
+        "1a5cebab2960"
+      ],
+      "recallDays": [
+        "2026-04-15",
+        "2026-04-16"
+      ],
+      "conceptTags": [
+        "v0.1",
+        "follow-up",
+        "text/url/files/okx-like",
+        "data/chat",
+        "sources/local",
+        "user-uploaded",
+        "role/persona",
+        "洞察"
+      ]
+    },
+    "memory:memory/2026-04-12.md:1:8": {
+      "key": "memory:memory/2026-04-12.md:1:8",
+      "path": "memory/2026-04-12.md",
+      "startLine": 1,
+      "endLine": 8,
+      "source": "memory",
+      "snippet": "- Worked on `okx-trader-sim` in `C:\\Users\\Ziming\\.openclaw\\workspace\\okx-trader-sim`. - User requirement hardened: keep OKX data real and consistent, show OKX API raw responses directly, avoid frontend-only derived views pretending to be authoritative. - Added/expanded OKX raw data display for account balance, positions, and order history, while keeping demo/live sync and connection testing. - Implemented strategy config for RAVE-USDT-SWAP using long-only rule: buy, then sell if price falls 1% from entry or 2% from post-entry peak; later user wanted parameter optimization via backtest rather than fixed defaults. - Built backtest support around RAVE-USDT-SWAP 1H candles, including grid search",
+      "recallCount": 6,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.8703891370727412,
+      "maxScore": 0.43519123110308433,
+      "firstRecalledAt": "2026-04-15T21:31:29.966Z",
+      "lastRecalledAt": "2026-04-16T21:02:51.794Z",
+      "queryHashes": [
+        "584e4b6cc2f5",
+        "82ff941c9794",
+        "c3fb550af49e",
+        "e4d29b14266e",
+        "6cad69e5f040",
+        "1a5cebab2960"
+      ],
+      "recallDays": [
+        "2026-04-15",
+        "2026-04-16"
+      ],
+      "conceptTags": [
+        "okx-trader-sim",
+        "frontend-only",
+        "added/expanded",
+        "demo/live",
+        "rave-usdt-swap",
+        "long-only",
+        "post-entry",
+        "worked"
+      ]
+    },
+    "memory:memory/2026-04-12.md:8:17": {
+      "key": "memory:memory/2026-04-12.md:8:17",
+      "path": "memory/2026-04-12.md",
+      "startLine": 8,
+      "endLine": 17,
+      "source": "memory",
+      "snippet": "- Added richer backtest UI concepts: sortable results, apply-params action, K-line chart, buy/sell markers, tooltip details, trade detail view, and equity curve. Latest user feedback: equity-curve axes need to be clearer, and K-line absence online is because fresh Railway instances have no backtest detail until a run happens. - Railway deployment succeeded after browserless login flow. Deployed app URL: `https://okx-trader-sim-production.up.railway.app`. - Key Railway fix: default Node 18 failed with Next 16, so added `nixpacks.toml` requesting Node 20. - Caveat for future self: many settings/state are still stored only in server memory, so Railway restarts can wipe API config, strategy conf",
+      "recallCount": 4,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.000005113806230296303,
+      "maxScore": 0.0000016252925434853546,
+      "firstRecalledAt": "2026-04-15T21:31:29.966Z",
+      "lastRecalledAt": "2026-04-16T21:02:51.794Z",
+      "queryHashes": [
+        "584e4b6cc2f5",
+        "82ff941c9794",
+        "c3fb550af49e",
+        "1a5cebab2960"
+      ],
+      "recallDays": [
+        "2026-04-15",
+        "2026-04-16"
+      ],
+      "conceptTags": [
+        "apply-params",
+        "k-line",
+        "buy/sell",
+        "equity-curve",
+        "nixpacks.toml",
+        "settings/state",
+        "added",
+        "richer"
+      ]
+    }
+  }
+}

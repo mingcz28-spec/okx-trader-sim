@@ -23,7 +23,6 @@ builder.Services.AddSingleton<EncryptionService>();
 builder.Services.AddHttpClient<OkxClient>();
 builder.Services.AddScoped<AppStateService>();
 builder.Services.AddScoped<ConfigService>();
-builder.Services.AddScoped<TradeService>();
 builder.Services.AddSingleton<StrategyRegistryService>();
 builder.Services.AddScoped<BacktestService>();
 builder.Services.AddScoped<OkxSyncService>();
